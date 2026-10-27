@@ -29,7 +29,7 @@ export function currentSteps(state) {
 /** Stable identity for a step across re-scans (phase + title). */
 export function stepKey(step) {
     if (!step) return "";
-    return (step.section || "") + "::" + (step.title || "");
+    return step.id || (step.section || "") + "::" + (step.title || "");
 }
 
 /**
@@ -38,8 +38,9 @@ export function stepKey(step) {
  * "Continue here" so the automated run never jumps ahead of the safe next step.
  * @returns {object|null}
  */
-export function selectNextStep(state) {
-    const steps = currentSteps(state);
+export function selectNextStep(state, allowedStepIds = null) {
+    const steps = allowedStepIds ? currentSteps(state).filter((step) => allowedStepIds.includes(step.id))
+        .sort((left, right) => (left.rank ?? Infinity) - (right.rank ?? Infinity)) : currentSteps(state);
     if (!steps.length) return null;
     const ord = (state && state.ordering) || { activeRank: null };
     const inPhase = steps.find(
@@ -56,11 +57,12 @@ export function isStepDone(state, step) {
 }
 
 /** Construct the mutable, serializable run record broadcast to the canvas. */
-export function makeRun({ scope, maxSteps, startRank } = {}) {
+export function makeRun({ scope, maxSteps, startRank, recommendationStepIds } = {}) {
     return {
         running: true,
         cancelled: false,
-        scope: scope === "all" ? "all" : "phase",
+        scope: ["all", "recommendations"].includes(scope) ? scope : "phase",
+        recommendationStepIds: scope === "recommendations" ? [...new Set(recommendationStepIds || [])] : [],
         maxSteps: maxSteps || AUTOPILOT_MAX_STEPS,
         startRank: startRank == null ? null : startRank,
         status: "running",
@@ -79,7 +81,7 @@ export function makeRun({ scope, maxSteps, startRank } = {}) {
  * @param {object} run from makeRun()
  * @param {{
  *   snapshot: () => Promise<object>,
- *   runTurn: (prompt: string) => Promise<any>,
+ *   runTurn: (prompt: string, displayPrompt: string) => Promise<any>,
  *   buildStepPrompt: (step: object) => string,
  *   onProgress: (run: object, state: object|null) => void,
  *   log?: Function,
@@ -99,7 +101,7 @@ export async function runAutopilot(run, deps) {
                 break;
             }
             const state = await deps.snapshot();
-            const step = selectNextStep(state);
+            const step = selectNextStep(state, run.scope === "recommendations" ? run.recommendationStepIds : null);
             if (!step) {
                 run.status = "completed";
                 break;
@@ -126,7 +128,8 @@ export async function runAutopilot(run, deps) {
 
             let stepError = null;
             try {
-                await deps.runTurn(deps.buildStepPrompt(step));
+                await deps.runTurn(deps.buildStepPrompt(step), run.scope === "recommendations" ?
+                    "Resolve approved finding step: " + step.title + "." : "Work on the next modernization plan step.");
             } catch (e) {
                 stepError = (e && e.message) || String(e);
             }

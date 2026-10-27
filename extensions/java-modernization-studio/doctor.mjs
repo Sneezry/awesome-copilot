@@ -19,9 +19,10 @@ export const TOOL_PROBES = [
     { key: "java", cmd: "java", args: ["-version"] },
     { key: "mvn", cmd: "mvn", args: ["-v"] },
     { key: "gradle", cmd: "gradle", args: ["-v"] },
+    { key: "ant", cmd: "ant", args: ["-version"] },
     { key: "git", cmd: "git", args: ["--version"] },
     { key: "docker", cmd: "docker", args: ["--version"] },
-    { key: "az", cmd: "az", args: ["--version"] },
+    { key: "az", cmd: "az", args: ["version", "--output", "json"] },
     { key: "azd", cmd: "azd", args: ["version"] },
     { key: "node", cmd: "node", args: ["--version"] },
 ];
@@ -39,6 +40,12 @@ export function osLabel() {
 export function parseToolVersion(key, text) {
     if (!text) return null;
     const t = String(text);
+    if (key === "az") {
+        try {
+            const version = JSON.parse(t)["azure-cli"];
+            if (typeof version === "string") return version;
+        } catch {}
+    }
     if (key === "java") {
         const m = t.match(/version\s+"?([\d._]+)"?/i);
         if (m) return m[1];
@@ -89,10 +96,14 @@ export function augmentedEnv(env, plat, lister) {
 }
 
 /** Build an exec function bound to a specific environment. */
-export function makeExec(env) {
+export function makeExec(env = process.env) {
     return (cmd, args) =>
         new Promise((resolve) => {
-            execFile(cmd, args, { timeout: 3500, windowsHide: true, env }, (error, stdout, stderr) => {
+            const windowsProbe = platform() === "win32" && TOOL_PROBES.some((probe) =>
+                probe.cmd === cmd && probe.args.length === args.length && probe.args.every((arg, index) => arg === args[index]));
+            const program = windowsProbe ? env.ComSpec || env.COMSPEC || "cmd.exe" : cmd;
+            const programArgs = windowsProbe ? ["/d", "/s", "/c", [cmd, ...args].join(" ")] : args;
+            execFile(program, programArgs, { timeout: windowsProbe && (cmd === "mvn" || cmd === "az") ? 8000 : 3500, windowsHide: true, env }, (error, stdout, stderr) => {
                 resolve({ error: error || null, stdout: String(stdout || ""), stderr: String(stderr || "") });
             });
         });
@@ -192,22 +203,25 @@ export async function discoverJavaHome(env, plat, readRc) {
 /** Probe a single tool. Returns { key, found, version }. */
 export async function probeOne(def, exec) {
     const run = exec || defaultExec;
-    let r;
-    try {
-        r = await run(def.cmd, def.args);
-    } catch (e) {
-        r = { error: e, stdout: "", stderr: "" };
-    }
+    const invoke = async () => {
+        try { return await run(def.cmd, def.args); }
+        catch (error) { return { error, stdout: "", stderr: "" }; }
+    };
+    let r = await invoke();
+    if ((def.key === "mvn" || def.key === "az") && r.error && (r.error.killed || r.error.code === "ETIMEDOUT")) r = await invoke();
+    const timedOut = !!(r.error && (r.error.killed || r.error.code === "ETIMEDOUT"));
+    const missing = { key: def.key, found: false, version: null };
+    const unavailable = timedOut ? { ...missing, reason: "timeout" } : missing;
     const text = ((r.stdout || "") + "\n" + (r.stderr || "")).trim();
     // ENOENT means the binary isn't on PATH at all.
-    if (r.error && r.error.code === "ENOENT") return { key: def.key, found: false, version: null };
-    if (r.error && !text) return { key: def.key, found: false, version: null };
-    const version = parseToolVersion(def.key, text);
+    if (r.error && r.error.code === "ENOENT") return missing;
+    if (r.error && !text) return unavailable;
+    const version = parseToolVersion(def.key, def.key === "az" && r.stdout ? r.stdout : text);
     if (r.error) {
         // Non-zero exit. Genuine `--version` calls exit 0, so only trust this if a
         // real version number came back. This rejects the macOS `java` stub, which
         // exits 1 with "Unable to locate a Java Runtime" when no JDK is installed.
-        if (!(version && /\d/.test(version))) return { key: def.key, found: false, version: null };
+        if (!(version && /\d/.test(version))) return unavailable;
     }
     return { key: def.key, found: true, version };
 }
@@ -237,6 +251,11 @@ function envAction(tool, detail, fix) {
     return { kind: "fix_env", payload: { tool, detail, fix }, label: "Help me set up " + tool };
 }
 
+function javaMajor(version) {
+    const match = String(version || "").match(/^(?:1\.)?(\d+)(?:[._]|$)/);
+    return match ? Number(match[1]) : null;
+}
+
 /**
  * Turn probe results + scan facts into grouped readiness checks. Pure.
  * @returns {{ overall:"ready"|"caution"|"blocked", generatedAt:string, groups:Array }}
@@ -250,16 +269,22 @@ export function buildDoctorReport({ probes, scan }) {
 
     // --- JDK -----------------------------------------------------------------
     const java = get("java");
+    const requiredJava = Math.max(17, javaMajor(a.javaVersion) || 17);
+    const installedJava = javaMajor(java.version);
+    const javaReady = java.found && installedJava != null && installedJava >= requiredJava;
+    const javaDetail = !java.found ? "java not found on PATH" : installedJava == null
+        ? "Java is installed but its version could not be verified"
+        : "Java " + java.version + " is older than the required Java " + requiredJava;
     buildRun.push(
-        java.found
+        javaReady
             ? { id: "jdk", label: "Java Development Kit", status: "ok", detail: "Java " + (java.version || "detected") }
             : {
                   id: "jdk",
                   label: "Java Development Kit",
                   status: "fail",
-                  detail: "java not found on PATH",
-                  fix: "Install a JDK 17 or newer (Microsoft Build of OpenJDK or Eclipse Temurin) and make sure `java` is on your PATH.",
-                  action: envAction("a JDK", "java not found on PATH", "Install JDK 17+ (Microsoft OpenJDK / Temurin) and add it to PATH."),
+                  detail: javaDetail,
+                  fix: "Use a JDK " + requiredJava + " or newer (Microsoft Build of OpenJDK or Eclipse Temurin) on PATH.",
+                  action: envAction("a JDK " + requiredJava + "+", javaDetail, "Install or select JDK " + requiredJava + "+ and verify it on PATH."),
               }
     );
 
@@ -267,6 +292,9 @@ export function buildDoctorReport({ probes, scan }) {
     if (buildTool === "Maven") {
         const mvn = get("mvn");
         const ok = mvn.found || a.hasMavenWrapper;
+        const timedOut = mvn.reason === "timeout";
+        const failureDetail = timedOut ? "Maven version check timed out; re-check the environment" :
+            "mvn not found and no ./mvnw wrapper in the repo";
         buildRun.push(
             ok
                 ? {
@@ -279,9 +307,11 @@ export function buildDoctorReport({ probes, scan }) {
                       id: "build",
                       label: "Maven",
                       status: "fail",
-                      detail: "mvn not found and no ./mvnw wrapper in the repo",
-                      fix: "Install Apache Maven, or add the Maven wrapper (`mvn -N wrapper:wrapper`) so the build runs anywhere.",
-                      action: envAction("Maven", "mvn not found and no ./mvnw wrapper", "Install Apache Maven or add the ./mvnw wrapper."),
+                      detail: failureDetail,
+                      fix: timedOut ? "The version command did not finish in time. Re-check after startup settles." :
+                          "Install Apache Maven, or add the Maven wrapper (`mvn -N wrapper:wrapper`) so the build runs anywhere.",
+                      action: timedOut ? { kind: "recheck_env", label: "Re-check environment" } :
+                          envAction("Maven", failureDetail, "Install Apache Maven or add the ./mvnw wrapper."),
                   }
         );
     } else if (buildTool === "Gradle") {
@@ -304,12 +334,24 @@ export function buildDoctorReport({ probes, scan }) {
                       action: envAction("Gradle", "gradle not found and no ./gradlew wrapper", "Install Gradle or add the ./gradlew wrapper."),
                   }
         );
+    } else if (buildTool === "Ant") {
+        const ant = get("ant");
+        buildRun.push(
+            ant.found
+                ? { id: "build", label: "Ant", status: "ok", detail: "Ant " + (ant.version || "detected") }
+                : {
+                      id: "build", label: "Ant", status: "fail", detail: "ant not found on PATH",
+                      fix: "Install Apache Ant or use a compatible project build setup.",
+                      action: envAction("Ant", "ant not found on PATH", "Install Apache Ant and verify it on PATH."),
+                  }
+        );
     } else {
         buildRun.push({
             id: "build",
             label: "Build tool",
-            status: "info",
-            detail: "No Maven or Gradle build file detected yet.",
+            status: "fail",
+            detail: "No Maven, Gradle, or Ant build file detected. Check that the Java project root is open.",
+            fix: "Open the Java project root containing pom.xml, build.gradle, or build.xml, then re-check.",
         });
     }
 
@@ -349,7 +391,9 @@ export function buildDoctorReport({ probes, scan }) {
     deploy.push(
         az.found
             ? { id: "az", label: "Azure CLI", status: "ok", detail: az.version ? "az " + az.version : "installed" }
-            : { id: "az", label: "Azure CLI", status: "info", detail: "Optional — needed to provision Azure resources and set up passwordless auth." }
+            : az.reason === "timeout"
+                ? { id: "az", label: "Azure CLI", status: "info", detail: "Azure CLI version check timed out; re-check the environment.", action: { kind: "recheck_env", label: "Re-check environment" } }
+                : { id: "az", label: "Azure CLI", status: "info", detail: "Optional — needed to provision Azure resources and set up passwordless auth." }
     );
     const azd = get("azd");
     deploy.push(

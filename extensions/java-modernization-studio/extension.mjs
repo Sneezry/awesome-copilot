@@ -13,7 +13,7 @@
 import { joinSession, createCanvas, CanvasError } from "@github/copilot-sdk/extension";
 import { basename } from "node:path";
 import { scanRepo } from "./scan.mjs";
-import { createInstanceServer, pushState, resolveRepoPath } from "./server.mjs";
+import { createInstanceServer, pushState, refreshAfterTurn, resolveRepoPath } from "./server.mjs";
 import { AUTOPILOT_TURN_TIMEOUT_MS } from "./autopilot.mjs";
 
 const instances = new Map(); // instanceId -> rec { server, url, repoPath, sseClients }
@@ -60,15 +60,15 @@ const session = await joinSession({
             open: async (ctx) => {
                 const repoPath = resolveRepoPath(ctx, lastWorkingDir);
                 if (repoPath) lastWorkingDir = repoPath; // never clobber a good target with null
-                const initialTab = ctx.input && ctx.input.initialTab ? ctx.input.initialTab : "overview";
+                const initialTab = ctx.input && ctx.input.initialTab ? ctx.input.initialTab : "assessment";
                 let rec = instances.get(ctx.instanceId);
                 if (!rec) {
                     rec = await createInstanceServer({
                         instanceId: ctx.instanceId,
                         repoPath,
                         initialTab,
-                        sendPrompt: (prompt) => sessionRef.send({ prompt }),
-                        runTurn: (prompt) => sessionRef.sendAndWait({ prompt }, AUTOPILOT_TURN_TIMEOUT_MS),
+                        sendPrompt: (prompt, displayPrompt) => sessionRef.send({ prompt, displayPrompt }),
+                        runTurn: (prompt, displayPrompt) => sessionRef.sendAndWait({ prompt, displayPrompt }, AUTOPILOT_TURN_TIMEOUT_MS),
                         log: logFn,
                     });
                     instances.set(ctx.instanceId, rec);
@@ -115,7 +115,7 @@ if (session.workspacePath && !lastWorkingDir) lastWorkingDir = session.workspace
 // tree — re-scan and push fresh state to every open cockpit.
 session.on("session.idle", async () => {
     for (const rec of instances.values()) {
-        await pushState(rec, logFn);
+        await refreshAfterTurn(rec, logFn);
     }
 });
 

@@ -1,21 +1,19 @@
 # Java Modernization Studio
 
-An interactive GitHub Copilot **canvas** that turns the [GitHub Copilot App Modernization for Java](https://learn.microsoft.com/en-us/azure/developer/java/migration/migrate-github-copilot-app-modernization-for-java) CLI workflow into a visible, steerable dashboard — assess a legacy Java app, drive a prioritized remediation plan, run validation gates, and dispatch Microsoft predefined tasks, all grounded in the repo's real artifacts.
+An interactive GitHub Copilot **canvas** that turns the [GitHub Copilot App Modernization for Java](https://learn.microsoft.com/en-us/azure/developer/java/migration/migrate-github-copilot-app-modernization-for-java) CLI workflow into a visible, steerable dashboard — assess a legacy Java app, review and approve a remediation plan, work on assessed findings, and run validation gates, all grounded in the repo's real artifacts.
 
 The Copilot App Modernization for Java tooling stays the engine. This canvas is the cockpit on top of it: it reads what the workflow produces and turns each step into an agent-driving button.
 
 ## What it does
 
-- **Overview** — at-a-glance modernization status (phase, % complete, finding counts) scanned from the repo.
-- **Readiness (Environment Doctor)** — checks JDK, Maven (or `./mvnw`), Git, Docker, and Azure CLI on PATH and flags what's missing before you start.
-- **Assessment** — renders structured findings from `.appmod/assessment.json` (stack summary, severity-ordered findings, strengths), each with a one-click action.
-- **Plan & Progress** — renders `plan.md` / `progress.md` as live checklists (`- [ ]` / `- [x]`).
-- **Validation** — runs the workflow's quality gates (CVE validation, test generation) before and after changes.
-- **Tasks** — dispatches Microsoft predefined modernization tasks (managed identity for DB, secrets → Key Vault, message-broker → Service Bus, S3 → Blob, cache → Redis, Entra ID auth, and more) relevant to the detected stack.
-- **Summary** — surfaces `summary.md` when the run is complete.
-- **Autopilot** — an optional phase-ordered, hands-free loop that advances assessment → remediation → validation and updates the dashboard as the agent makes progress.
+- **Workflow status** — phase, remaining steps, next action, and expandable summary and execution history stay visible across views.
+- **Readiness** — checks required JDK/build tools and optional tools before execution; access it from the global controls.
+- **Assess** — configures scope and target Java, then shows severity-ordered findings with evidence and linked actions.
+- **Plan** — reviews and approves `plan.md`, follows `progress.md`, and offers predefined tasks or repository Skills only for mapped, approved findings. Older plans without an assessment ID can be reviewed and linked to the current verified assessment without losing completed progress; they still require separate approval.
+- **Validate** — runs build, unit tests, CVE, consistency, and completeness checks.
+- **Autopilot** — optionally runs approved steps in order, with Stop always available while it is running.
 
-Buttons don't execute logic in the canvas — they dispatch a grounded prompt to your Copilot agent (action kinds: `run_task`, `generate_plan`, `run_cve`, `generate_tests`, `fix_finding`). The agent does the work; the canvas reflects the result.
+Buttons dispatch grounded prompts to your Copilot agent; the canvas reflects the resulting artifacts. Code-changing actions require a current, approved plan and a matching assessed finding.
 
 ## Prerequisites
 
@@ -43,22 +41,27 @@ Open the Java Modernization Studio canvas for /path/to/my-java-app and run a rea
 
 The canvas resolves the target repo from its `repoPath` input, falling back to the session's working directory. From there:
 
-1. **Readiness first** — resolve any missing JDK/Maven/Azure CLI the Doctor flags.
-2. **Assess** — generate `.appmod/assessment.json` + a prioritized `plan.md` / `progress.md`.
-3. **Remediate** — work findings in severity order (P0 first), using task buttons and "Help me fix this".
-4. **Validate** — run the CVE and test-generation gates.
-5. **Ship** — when the work is genuinely complete, write `summary.md`.
+1. **Readiness first** — resolve required tool blockers and re-check the environment.
+2. **Assess** — select the module and Java target, then generate `.appmod/assessment.json`.
+3. **Plan** — generate `plan.md` / `progress.md`, review the steps, and approve the current revision.
+4. **Remediate** — work on approved steps linked to assessed findings, one at a time or in a confirmed batch.
+5. **Validate and hand off** — run the quality gates, review `summary.md`, and open a PR when ready.
 
 ### Suggested agent instructions
 
 ```text
 When a user modernizes a Java project with the Java Modernization Studio canvas:
 1) Open the canvas pointed at the repo (repoPath) and run the Environment Doctor first.
-2) Run an assessment; write findings to .appmod/assessment.json and a prioritized plan.md / progress.md.
+2) Run an assessment for the selected scope and target; write findings with unique IDs to
+   .appmod/assessment.json and a prioritized plan.md / progress.md.
    Start plan.md, progress.md, and summary.md with the exact first line <!-- appmod-cockpit --> so the
-   canvas recognizes them as modernization artifacts.
-3) Work findings in severity order (P0 first); run the validation gates (CVE scan, test generation)
-   before and after code changes.
+   canvas recognizes them as modernization artifacts. In both checklists, keep a stable
+   <!-- appmod-step:<16-32 lowercase hex> --> per step and, when supported by a finding,
+   <!-- appmod-finding:<encodeURIComponent(finding.id)> --> on that step. When a finding step
+   uses a predefined task or repository Skill, also keep <!-- appmod-task:<task.id> --> or
+   <!-- appmod-skill:<encodeURIComponent(folder)> --> on that step in both files.
+3) Have the user review and approve the current plan before changing code. Work only on approved
+   steps; run validation before handing off changes.
 4) Keep plan.md / progress.md updated as - [ ] / - [x] checklists. Only write summary.md when the
    work is truly complete.
 ```
@@ -68,9 +71,9 @@ When a user modernizes a Java project with the Java Modernization Studio canvas:
 The canvas renders **real repo state**, never invented status:
 
 - Structured findings come from `.appmod/assessment.json`.
-- Plan/progress/summary come from root `plan.md` / `progress.md` / `summary.md`.
+- Plan/progress/summary prefer `.appmod/` files, then trusted root files; marked `.github/modernize/` files are a fallback for native workflow output.
 - To avoid mistaking an unrelated repo's `plan.md` for modernization output, root markdown is trusted **only** when `.appmod/` exists **or** the file's first line is the provenance marker `<!-- appmod-cockpit -->`.
-- Stack detection (build tool, Java version, framework, container) is parsed from `pom.xml` / Gradle / Dockerfile and drives which tasks are shown.
+- Stack detection reads `pom.xml` / Gradle / Dockerfile for context; it does not, by itself, authorize task execution. Finding IDs link to approved plan steps via the checklist markers above. Task and Skill actions require explicit markers on those steps, not matching titles. Existing plans can add links in the plan editor; saving a changed plan requires a fresh approval.
 
 ## Agent-callable actions
 

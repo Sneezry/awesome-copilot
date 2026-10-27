@@ -3,8 +3,9 @@
 // .github/skills/, extracts assessment facts from Maven/Gradle build files, and
 // reports git branch state. Everything degrades gracefully when files are absent.
 
-import { readFile, readdir, stat, open } from "node:fs/promises";
-import { join } from "node:path";
+import { readFile, readdir, stat, open, lstat, realpath } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { isAbsolute, join, posix, relative, sep } from "node:path";
 import { execFile } from "node:child_process";
 import { catalogWithRelevance, VALIDATION_GATES } from "./catalog.mjs";
 
@@ -89,6 +90,11 @@ function hasMarker(md) {
     return typeof md === "string" && APPMOD_MARKER_RE.test(md.slice(0, 2000));
 }
 
+function artifactAssessmentId(md) {
+    const match = typeof md === "string" && md.slice(0, 2000).match(/<!--\s*appmod-assessment-id:([a-z0-9-]+)\s*-->/i);
+    return match ? match[1] : null;
+}
+
 // The assessment.json is written by an LLM step, so its shape can drift: severities
 // may be lowercase or word-form, `files` may be a bare string, findings may be
 // missing, and the top level might not even be an object. Normalize defensively so
@@ -105,11 +111,22 @@ function normalizeSeverity(sev) {
     if (typeof sev !== "string") return "P3";
     return SEVERITY_ALIASES[sev.trim().toLowerCase()] || "P3";
 }
+function normalizeEvidence(item) {
+    if (typeof item === "string") return item.trim() ? { detail: item.trim() } : null;
+    if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+    const evidence = {};
+    if (typeof item.file === "string" && item.file.trim()) evidence.file = item.file.trim();
+    if (Number.isSafeInteger(item.line) && item.line > 0) evidence.line = item.line;
+    if (typeof item.detail === "string" && item.detail.trim()) evidence.detail = item.detail.trim();
+    if (typeof item.snippet === "string" && item.snippet.trim()) evidence.snippet = item.snippet;
+    return Object.keys(evidence).length ? evidence : null;
+}
 function normalizeFinding(f, idx) {
     if (!f || typeof f !== "object" || Array.isArray(f)) return null;
     let files = [];
     if (typeof f.files === "string") files = f.files ? [f.files] : [];
     else if (Array.isArray(f.files)) files = f.files.filter((x) => typeof x === "string");
+    const evidenceIn = Array.isArray(f.evidence) ? f.evidence : (f.evidence ? [f.evidence] : []);
     const title =
         (typeof f.title === "string" && f.title.trim()) ||
         (typeof f.id === "string" && f.id.trim()) ||
@@ -120,12 +137,55 @@ function normalizeFinding(f, idx) {
         title,
         detail: typeof f.detail === "string" ? f.detail : "",
         files,
+        impact: typeof f.impact === "string" ? f.impact : "",
+        recommendation: typeof f.recommendation === "string" ? f.recommendation : "",
+        evidence: evidenceIn.map(normalizeEvidence).filter(Boolean),
     };
     if (f.action && typeof f.action === "object" && !Array.isArray(f.action)) out.action = f.action;
     return out;
 }
+function normalizeUnifiedReport(raw) {
+    if (raw.version !== "1.0.0" || !raw.metadata || !Array.isArray(raw.projects) ||
+        !raw.rules || typeof raw.rules !== "object" || Array.isArray(raw.rules)) return null;
+    const severities = new Set(["mandatory", "potential", "optional", "information"]);
+    const findings = [];
+    for (const project of raw.projects) {
+        if (!project || typeof project.path !== "string" || !Array.isArray(project.incidents)) return null;
+        for (const incident of project.incidents) {
+            const rule = incident && raw.rules[incident.ruleId];
+            if (!rule || !severities.has(rule.severity) || typeof incident.incidentId !== "string") return null;
+            const location = incident.locationKind === "source-file" && typeof incident.location === "string" && incident.location ?
+                posix.join(project.path.replaceAll("\\", "/"), incident.location.replaceAll("\\", "/")) : "";
+            findings.push({
+                id: project.path + ":" + incident.incidentId, severity: rule.severity,
+                domain: rule.domain, category: rule.category, title: rule.title || rule.id,
+                detail: rule.description || "", impact: "", recommendation: "",
+                files: location ? [location] : [],
+                evidence: [{ ...(location ? { file: location } : {}),
+                    ...(Number.isSafeInteger(incident.line) && incident.line > 0 ? { line: incident.line } : {}),
+                    ...(typeof incident.message === "string" && incident.message ? { detail: incident.message } : {}),
+                    ...(typeof incident.snippet === "string" && incident.snippet ? { snippet: incident.snippet } : {}) }],
+            });
+        }
+    }
+    if (raw.security != null && !Array.isArray(raw.security)) return null;
+    for (const item of raw.security || []) {
+        if (!item || !severities.has(item.severity) || !item.evidence || !Array.isArray(item.evidence.files)) return null;
+        const explanation = typeof item.evidence.explanation === "string" ? item.evidence.explanation : "";
+        const files = item.evidence.files.filter((file) => typeof file === "string");
+        findings.push({
+            id: item.id, severity: item.severity, domain: "security", category: item.category,
+            title: item.title, detail: item.description || "", impact: "", recommendation: "", files,
+            evidence: files.length ? files.map((file) => ({ file, detail: explanation })) : (explanation ? [{ detail: explanation }] : []),
+        });
+    }
+    return { severityScale: "unified", lifecycleStatus: raw.metadata.status,
+        generatedAt: raw.metadata.analysisEndTime || raw.metadata.analysisStartTime,
+        headline: raw.metadata.name, findings };
+}
 function normalizeReport(raw) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+    if ("version" in raw && "projects" in raw) return normalizeUnifiedReport(raw);
     const findingsIn = Array.isArray(raw.findings) ? raw.findings : [];
     const findings = [];
     findingsIn.forEach((f, i) => {
@@ -137,6 +197,36 @@ function normalizeReport(raw) {
         out.strengths = typeof raw.strengths === "string" && raw.strengths ? [raw.strengths] : [];
     }
     return out;
+}
+
+async function readNativeAssessment(repoPath) {
+    const reportsDir = join(repoPath, ".github", "modernize", "reports");
+    let root;
+    let entries;
+    try {
+        root = await realpath(repoPath);
+        const directory = await realpath(reportsDir);
+        const rel = relative(root, directory);
+        if (rel === ".." || rel.startsWith(".." + sep) || isAbsolute(rel)) return null;
+        entries = (await readdir(reportsDir, { withFileTypes: true }))
+            .filter((entry) => entry.isDirectory() && entry.name.startsWith("report-"))
+            .sort((left, right) => right.name.localeCompare(left.name)).slice(0, 100);
+    } catch { return null; }
+    const candidates = [];
+    for (const entry of entries) {
+        const path = join(reportsDir, entry.name, "report.json");
+        try {
+            if (!(await lstat(path)).isFile()) continue;
+            const rel = relative(root, await realpath(path));
+            if (rel === ".." || rel.startsWith(".." + sep) || isAbsolute(rel)) continue;
+            const raw = JSON.parse(await readText(path));
+            const report = normalizeReport(raw);
+            if (report?.severityScale !== "unified" || report.lifecycleStatus !== "completed") continue;
+            candidates.push({ report, path: rel.split(sep).join("/"), time: Date.parse(report.generatedAt) || 0 });
+        } catch {}
+    }
+    candidates.sort((left, right) => right.time - left.time || right.path.localeCompare(left.path));
+    return candidates[0] || null;
 }
 
 function stripMd(s) {
@@ -158,7 +248,7 @@ function statusFromText(text) {
 
 // Parse GitHub-style task list items: "- [ ] ...", "- [x] ...", "- [/] ...".
 // Each item also carries the nearest preceding heading as its `section`.
-function parseChecklist(md) {
+export function parseChecklist(md) {
     const items = [];
     let section = null;
     for (const line of md.split(/\r?\n/)) {
@@ -170,9 +260,20 @@ function parseChecklist(md) {
         let status = "pending";
         if (mark === "x") status = "done";
         else if (mark === "/" || mark === "~" || mark === "-") status = "in_progress";
-        const inline = statusFromText(m[2]);
+        const id = m[2].match(/<!--\s*appmod-step:([a-f0-9]{16,32})\s*-->/i)?.[1] || null;
+        const findingIds = [...m[2].matchAll(/<!--\s*appmod-finding:([^\s<>]+)\s*-->/gi)]
+            .map((match) => { try { return decodeURIComponent(match[1]); } catch { return null; } }).filter(Boolean);
+        const taskId = m[2].match(/<!--\s*appmod-task:([a-z0-9-]+)\s*-->/i)?.[1] || null;
+        const skillToken = m[2].match(/<!--\s*appmod-skill:([^\s<>]+)\s*-->/i)?.[1];
+        let skillFolder = null;
+        try { if (skillToken) skillFolder = decodeURIComponent(skillToken); } catch { /* Invalid marker is not a link. */ }
+        const title = m[2].replace(/<!--\s*appmod-step:[a-f0-9]{16,32}\s*-->/gi, "")
+            .replace(/<!--\s*appmod-(?:finding|task|skill):[^\s<>]+\s*-->/gi, "");
+        const inline = statusFromText(title);
         if (inline) status = inline;
-        items.push({ title: stripMd(m[2]), status, section });
+        items.push({ title: stripMd(title), status, section, id,
+            ...(findingIds.length ? { findingIds: [...new Set(findingIds)] } : {}),
+            ...(taskId ? { taskId } : {}), ...(skillFolder ? { skillFolder } : {}) });
     }
     return items;
 }
@@ -203,11 +304,33 @@ function parseSteps(md) {
     return checklist.length ? checklist : parseLooseSteps(md);
 }
 
+export function editablePlanMarkdown(markdown) {
+    const revision = createHash("sha256").update(markdown).digest("hex");
+    let ordinal = 0;
+    return markdown.replace(/^([ \t]*[-*][ \t]+\[[ xX/~\-]\][ \t]+.*\S[ \t]*)(\r?)$/gm, (line, body, ending) => {
+        ordinal++;
+        if (/<!--\s*appmod-step:[a-f0-9]{16,32}\s*-->/i.test(body)) return line;
+        const id = createHash("sha256").update(revision + ":" + ordinal).digest("hex").slice(0, 16);
+        return body.trimEnd() + " <!-- appmod-step:" + id + " -->" + ending;
+    });
+}
+
+export function withAssessmentId(markdown, id) {
+    const existing = artifactAssessmentId(markdown);
+    if (existing && existing !== id) throw new Error("Assessment ID does not match the current assessment.");
+    const newline = markdown.includes("\r\n") ? "\r\n" : "\n";
+    const marker = "<!-- appmod-cockpit -->" + newline;
+    const provenance = "<!-- appmod-assessment-id:" + id + " -->" + newline;
+    if (markdown.startsWith(marker + provenance)) return markdown;
+    const body = existing ? markdown.replace(/<!--\s*appmod-assessment-id:[a-z0-9-]+\s*-->\r?\n?/i, "") : markdown;
+    return body.startsWith(marker) ? marker + provenance + body.slice(marker.length) : marker + provenance + body;
+}
+
 // Return the steps under the first heading matching `headingRe`, up to the next
 // heading, or null if there is no such section. Used to scope the validation
 // gates to an explicit "Validation gates" section so unrelated checklist items
 // that merely mention "build"/"vulnerable"/etc. don't hijack a gate's status.
-function sectionSteps(md, headingRe) {
+function validationSection(md) {
     if (!md) return null;
     let inSection = false;
     const buf = [];
@@ -215,13 +338,18 @@ function sectionSteps(md, headingRe) {
         const h = line.match(/^\s*#{1,6}\s+(.*\S)\s*$/);
         if (h) {
             if (inSection) break; // next heading closes the section
-            if (headingRe.test(h[1])) inSection = true;
+            if (phaseRankFromName(h[1]) === 5) inSection = true;
             continue;
         }
         if (inSection) buf.push(line);
     }
-    if (!inSection) return null;
-    const steps = parseSteps(buf.join("\n"));
+    return inSection ? buf.join("\n") : null;
+}
+
+function sectionSteps(md) {
+    const section = validationSection(md);
+    if (section == null) return null;
+    const steps = parseSteps(section);
     return steps.length ? steps : null;
 }
 
@@ -240,11 +368,11 @@ function percentDone(steps) {
 // P3 -> validation. Unknown sections return null (never gated).
 function phaseRankFromName(name) {
     if (!name) return null;
-    const n = String(name).toLowerCase();
+    const n = String(name).trim().toLowerCase();
     if (/assessment/.test(n)) return 0;
+    if (/^(?:p[0-3]\s*[-:.]?\s*)?(?:validation(?:\s+(?:gates|checks|tests))?|gates|sign-?off)$/.test(n)) return 5;
     const m = n.match(/\bp([0-3])\b/);
     if (m) return 1 + Number(m[1]);
-    if (/validation|gates|sign-?off/.test(n)) return 5;
     return null;
 }
 
@@ -421,6 +549,7 @@ async function buildAssessment(repoPath) {
     // the (often dependency-free) aggregator root pom declares.
     const childPoms = [];
     const childGradles = [];
+    const modules = [];
     try {
         const entries = await readdir(repoPath, { withFileTypes: true });
         for (const e of entries) {
@@ -430,6 +559,7 @@ async function buildAssessment(repoPath) {
             let cg = await readText(join(repoPath, e.name, "build.gradle"));
             if (!cg) cg = await readText(join(repoPath, e.name, "build.gradle.kts"));
             if (cg) childGradles.push(cg);
+            if (cp || cg || (await readText(join(repoPath, e.name, "build.xml")))) modules.push(e.name);
         }
     } catch {
         /* ignore */
@@ -454,6 +584,7 @@ async function buildAssessment(repoPath) {
 
     return {
         buildTool,
+        modules: modules.sort(),
         javaVersion: detectJavaVersion(allPom, allGradle),
         springBoot,
         springVersion,
@@ -480,24 +611,49 @@ export async function scanRepo(repoPath, opts = {}) {
     // Modernization docs. Prefer the namespaced .appmod/ copies; the root-level
     // files (plan.md / progress.md / summary.md) use very common filenames, so we
     // trust them as workflow state only when the provenance gate below passes.
-    const [apPlan, apProgress, apSummary, rootPlan, rootProgress, rootSummary] = await Promise.all([
+    const [apPlan, apProgress, apSummary, rootPlan, rootProgress, rootSummary, nativePlan, nativeProgress, nativeSummary] = await Promise.all([
         readText(join(repoPath, ".appmod", "plan.md")),
         readText(join(repoPath, ".appmod", "progress.md")),
         readText(join(repoPath, ".appmod", "summary.md")),
         readText(join(repoPath, "plan.md")),
         readText(join(repoPath, "progress.md")),
         readText(join(repoPath, "summary.md")),
+        readText(join(repoPath, ".github", "modernize", "plan.md")),
+        readText(join(repoPath, ".github", "modernize", "progress.md")),
+        readText(join(repoPath, ".github", "modernize", "summary.md")),
     ]);
 
     // Structured assessment report (written by the assessment step). Optional,
     // and the strongest provenance signal that this repo is running the workflow.
     let report = null;
     const reportRaw = await readText(join(repoPath, ".appmod", "assessment.json"));
-    if (reportRaw) {
+    const nativeReport = reportRaw == null ? await readNativeAssessment(repoPath) : null;
+    let reportStatus = nativeReport ? "ready" : (reportRaw == null ? "missing" : "invalid");
+    if (nativeReport) report = nativeReport.report;
+    if (reportRaw != null) {
         try {
-            report = normalizeReport(JSON.parse(reportRaw));
+            const raw = JSON.parse(reportRaw);
+            report = normalizeReport(raw);
+            if (report && (Array.isArray(raw.findings) || report.severityScale === "unified" && report.lifecycleStatus === "completed")) reportStatus = "ready";
+            else if (report?.severityScale === "unified" && ["pending", "running"].includes(report.lifecycleStatus)) reportStatus = "running";
         } catch {
             report = null;
+        }
+    }
+    let assessmentConfig = null;
+    const configRaw = await readText(join(repoPath, ".appmod", "assessment-config.json"));
+    let assessmentConfigStatus = configRaw == null ? "missing" : "invalid";
+    if (configRaw != null) {
+        try {
+            const config = JSON.parse(configRaw);
+            if (config && typeof config.id === "string" && config.id &&
+                typeof config.module === "string" && config.module &&
+                [17, 21].includes(config.targetJava) && config.cloud === "Azure") {
+                assessmentConfig = config;
+                assessmentConfigStatus = "ready";
+            }
+        } catch {
+            assessmentConfig = null;
         }
     }
 
@@ -510,9 +666,59 @@ export async function scanRepo(repoPath, opts = {}) {
     const hasAppmodArtifact =
         reportRaw != null || apPlan != null || apProgress != null || apSummary != null;
     const trusted = (root) => hasAppmodArtifact || hasMarker(root);
-    const planMd = apPlan || (trusted(rootPlan) ? rootPlan : null);
-    const progressMd = apProgress || (trusted(rootProgress) ? rootProgress : null);
-    const summaryMd = apSummary || (trusted(rootSummary) ? rootSummary : null);
+    const planPath = apPlan !== null ? ".appmod/plan.md" : trusted(rootPlan) && rootPlan !== null ? "plan.md" :
+        nativePlan !== null && hasMarker(nativePlan) ? ".github/modernize/plan.md" : null;
+    const planMd = planPath === ".appmod/plan.md" ? apPlan : planPath === "plan.md" ? rootPlan : planPath ? nativePlan : null;
+    const progressPath = apProgress !== null ? ".appmod/progress.md" : trusted(rootProgress) && rootProgress !== null ? "progress.md" :
+        nativeProgress !== null && hasMarker(nativeProgress) ? ".github/modernize/progress.md" : null;
+    const progressMd = progressPath === ".appmod/progress.md" ? apProgress : progressPath === "progress.md" ? rootProgress : progressPath ? nativeProgress : null;
+    const summaryMd = apSummary || (trusted(rootSummary) ? rootSummary : null) ||
+        (nativeSummary !== null && hasMarker(nativeSummary) ? nativeSummary : null);
+    let reportConfigStatus = null;
+    let planConfigStatus = null;
+    if (assessmentConfig) {
+        if (reportStatus !== "ready") reportConfigStatus = "missing";
+        else {
+            const scope = report.scope;
+            const scopeConfig = scope && typeof scope.module === "string" && scope.module &&
+                typeof scope.targetJava === "number" && typeof scope.cloud === "string" && scope.cloud ? scope : null;
+            const options = report.assessmentConfig || scopeConfig;
+            if (!report.assessmentId || !options) reportConfigStatus = "unverified";
+            else reportConfigStatus = report.assessmentId === assessmentConfig.id &&
+                options.module === assessmentConfig.module && options.targetJava === assessmentConfig.targetJava &&
+                options.cloud === assessmentConfig.cloud ? "current" : "outdated";
+        }
+        const planDocs = [planMd, progressMd].filter(Boolean);
+        if (!planDocs.length) planConfigStatus = "missing";
+        else if (planDocs.some((doc) => !artifactAssessmentId(doc))) planConfigStatus = "unverified";
+        else planConfigStatus = planDocs.every((doc) => artifactAssessmentId(doc) === assessmentConfig.id) ? "current" : "outdated";
+    }
+    const planRevision = planMd == null ? null : createHash("sha256").update(planMd).digest("hex");
+    const adoptable = !!planMd && !!assessmentConfig && reportConfigStatus === "current" && !!reportRaw &&
+        planConfigStatus === "unverified" && parseChecklist(planMd).length > 0 &&
+        [[planMd, planPath], [progressMd, progressPath]].filter(([doc]) => doc != null).every(([doc, path]) => {
+            const id = artifactAssessmentId(doc);
+            return (!id || id === assessmentConfig.id) &&
+                (!/<!--\s*appmod-assessment-id:/i.test(doc.slice(0, 2000)) || !!id) &&
+                (hasMarker(doc) || path?.startsWith(".appmod/"));
+        });
+    const planContentHash = planMd == null ? null : createHash("sha256")
+        .update(planMd.replace(/^(\s*[-*]\s+\[)[ xX/~\-](\]\s+)/gm, "$1 $2")).digest("hex");
+    const approvalRaw = await readText(join(repoPath, ".appmod", "plan-approval.json"));
+    let planApprovalStatus = approvalRaw == null ? "missing" : "invalid";
+    if (approvalRaw != null) {
+        try {
+            const approval = JSON.parse(approvalRaw);
+            const config = assessmentConfig;
+            if (approval && typeof approval.planHash === "string" && typeof approval.assessmentId === "string" &&
+                typeof approval.planPath === "string" && approval.scope && typeof approval.scope === "object") {
+                planApprovalStatus = config && approval.assessmentId === config.id && approval.planPath === planPath &&
+                    approval.planHash === planContentHash && approval.scope.module === config.module &&
+                    approval.scope.targetJava === config.targetJava && approval.scope.cloud === config.cloud &&
+                    reportConfigStatus === "current" && planConfigStatus === "current" ? "approved" : "outdated";
+            }
+        } catch { planApprovalStatus = "invalid"; }
+    }
 
     const assessment = await buildAssessment(repoPath);
     const skills = await discoverSkills(repoPath);
@@ -523,21 +729,40 @@ export async function scanRepo(repoPath, opts = {}) {
     for (const arr of [planSteps, progressSteps]) {
         for (const st of arr) st.rank = phaseRankFromName(st.section);
     }
-    // Progress is the source of truth for status; fall back to plan steps.
-    const steps = progressSteps.length ? progressSteps : planSteps;
+    // Keep progress status while using the reviewed plan for step names and order.
+    const linkedSteps = planMd && parseChecklist(planMd).length ? planSteps.map((step) => {
+        const progress = progressSteps.find((item) => step.id && item.id === step.id) ||
+            progressSteps.find((item) => item.title === step.title && (item.section || "") === (step.section || ""));
+        return { ...step, status: progress?.status || step.status };
+    }) : null;
+    if (report?.findings && reportStatus === "ready") {
+        const counts = new Map();
+        for (const finding of report.findings) counts.set(finding.id, (counts.get(finding.id) || 0) + 1);
+        report = { ...report, findings: report.findings.map((finding) => {
+            const matches = !nativeReport && reportConfigStatus === "current" && planConfigStatus === "current" && counts.get(finding.id) === 1 ?
+                (linkedSteps || planSteps).filter((step) => step.findingIds?.includes(finding.id)) : [];
+            const planSteps = matches.map(({ id, title, section, status, rank }) => ({ id, title, section, status, rank }));
+            const status = !matches.length ? "unmatched" : matches.every((step) => step.status === "done") ? "done" :
+                matches.some((step) => step.status === "failed") ? "failed" :
+                matches.some((step) => step.status === "in_progress" || step.status === "done") ? "in_progress" : "pending";
+            return { ...finding, planSteps, status };
+        }) };
+    }
+    const steps = linkedSteps || (progressSteps.length ? progressSteps : planSteps);
     const percent = percentDone(steps);
     const ordering = computeOrdering(steps);
     // Prefer an explicit "Validation"/"gates" section for gate status; fall back
     // to scanning all steps when no such section exists.
     const gateSteps =
-        sectionSteps(progressMd, /validation|gates/i) ||
-        sectionSteps(summaryMd, /validation|gates/i) ||
-        steps;
-    const gates = deriveGates(gateSteps, summaryMd);
+        sectionSteps(progressMd) ||
+        sectionSteps(summaryMd) ||
+        (steps.some((step) => step.section) ? [] : steps);
+    const gates = deriveGates(gateSteps, validationSection(summaryMd));
 
     let status = "not_started";
-    if (summaryMd) status = "completed";
-    else if (planMd || progressMd) status = "in_progress";
+    if (summaryMd && VALIDATION_GATES.every(({ key }) => gates[key] === "done") &&
+        (!assessmentConfig || (reportConfigStatus === "current" && planConfigStatus === "current"))) status = "completed";
+    else if (planMd || progressMd || summaryMd) status = "in_progress";
 
     let git = null;
     if (includeGit) {
@@ -561,10 +786,22 @@ export async function scanRepo(repoPath, opts = {}) {
         tasks: catalogWithRelevance(assessment.detectedKeys),
         skills,
         git,
-        plan: { exists: !!planMd, steps: planSteps },
-        progress: { exists: !!progressMd, steps: progressSteps },
+        plan: { exists: !!planMd, steps: planSteps, markdown: planMd || "", editableMarkdown: planMd ?
+            (adoptable ? withAssessmentId(editablePlanMarkdown(planMd), assessmentConfig.id) : editablePlanMarkdown(planMd)) : "",
+            adoptable, path: planPath, revision: planRevision, contentHash: planContentHash },
+        progress: { exists: !!progressMd, steps: linkedSteps && progressMd ? linkedSteps : progressSteps, path: progressPath,
+            revision: progressMd == null ? null : createHash("sha256").update(progressMd).digest("hex") },
         summary: { exists: !!summaryMd, markdown: summaryMd || "" },
         report,
+        reportStatus,
+        reportRevision: reportRaw == null ? null : createHash("sha256").update(reportRaw).digest("hex"),
+        reportSource: nativeReport ? "native" : (reportRaw == null ? null : "cockpit"),
+        reportPath: nativeReport ? nativeReport.path : (reportRaw == null ? null : ".appmod/assessment.json"),
+        assessmentConfig,
+        assessmentConfigStatus,
+        reportConfigStatus,
+        planConfigStatus,
+        planApprovalStatus,
         ordering,
         gates,
     };

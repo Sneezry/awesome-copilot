@@ -23,6 +23,14 @@ header.top {
   padding: 14px 18px 0;
 }
 .title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.global-controls { display: flex; align-items: center; gap: 8px; }
+.global-controls .branch { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.utility-menu { position: relative; }
+.utility-menu summary { cursor: pointer; list-style: none; border: 1px solid var(--border-color-default,#d0d7de); border-radius: 6px; padding: 3px 9px; font-size: 19px; line-height: 23px; }
+.utility-menu summary::-webkit-details-marker { display: none; }
+.utility-menu summary:focus-visible { outline: 2px solid var(--color-focus-outline, var(--true-color-blue,#0969da)); }
+.utility-popover { position: absolute; right: 0; top: calc(100% + 6px); z-index: 12; min-width: 180px; display: flex; flex-direction: column; gap: 6px; background: var(--background-color-default,#fff); border: 1px solid var(--border-color-default,#d0d7de); border-radius: 6px; padding: 8px; box-shadow: 0 6px 16px rgba(31,35,40,.12); }
+.utility-popover .btn { text-align: left; }
 h1 {
   font-size: var(--text-title-medium, 18px);
   font-weight: var(--font-weight-semibold, 600);
@@ -56,6 +64,15 @@ nav.tabs button.active:hover { border-bottom-color: var(--true-color-blue,#0969d
 nav.tabs button:focus-visible { outline: 2px solid var(--color-focus-outline, var(--true-color-blue,#0969da)); outline-offset: -2px; border-radius: 4px; }
 nav.tabs button .count { font-size: 11px; color: var(--text-color-muted,#656d76); }
 main { padding: 16px 18px 40px; max-width: 980px; }
+.workflow-overview { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding: 10px 0 14px; margin-bottom: 16px; border-bottom: 1px solid var(--border-color-default,#d0d7de); }
+.workflow-stage, .workflow-next { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.workflow-stage strong, .workflow-next strong { overflow-wrap: anywhere; }
+.workflow-stage span, .workflow-next span { color: var(--text-color-muted,#656d76); font-size: 12px; }
+.workflow-next { flex: 1 1 320px; }
+.workflow-next .btn { margin-left: auto; }
+.summary-details { flex: 0 0 100%; font-size: 12.5px; }
+.summary-details summary, .run-log summary { cursor: pointer; font-weight: 600; }
+.summary-details .md { margin-top: 8px; }
 .card {
   border: 1px solid var(--border-color-default, #d0d7de);
   border-radius: 10px; padding: 14px 16px; margin-bottom: 12px;
@@ -102,6 +119,13 @@ ul.steps li:last-child { border-bottom: none; }
 .cat { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-color-muted,#656d76); margin: 14px 0 4px; font-weight: 600; }
 .empty { text-align: center; padding: 26px 16px; color: var(--text-color-muted,#656d76); }
 .empty .big { font-size: 15px; color: var(--text-color-default,#1f2328); margin-bottom: 6px; font-weight: 600; }
+.assessment-settings { padding: 0 0 16px; margin-bottom: 16px; border-bottom: 1px solid var(--border-color-default,#d0d7de); }
+.assessment-settings h2 { font-size: 14px; margin: 0 0 12px; }
+.setting-fields { display: grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap: 12px; margin-bottom: 12px; }
+.setting-fields label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--text-color-muted,#656d76); min-width: 0; }
+.setting-fields select, .setting-fields .setting-value { color: var(--text-color-default,#1f2328); font: inherit; font-size: 13px; }
+.setting-fields select { width: 100%; padding: 6px 8px; border: 1px solid var(--border-color-default,#d0d7de); border-radius: 4px; background: var(--background-color-default,#fff); }
+.setting-fields .setting-value { overflow-wrap: anywhere; padding: 7px 0; }
 .toast {
   position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
   background: var(--true-color-blue,#0969da); color: #fff; padding: 9px 16px;
@@ -109,7 +133,9 @@ ul.steps li:last-child { border-bottom: none; }
   max-width: 90%;
 }
 .toast.show { opacity: 1; }
-.banner { background: var(--true-color-blue-muted, #ddf4ff); border: 1px solid var(--true-color-blue,#0969da); color: var(--text-color-default,#1f2328); padding: 8px 12px; border-radius: 8px; font-size: 12.5px; margin-bottom: 12px; display: flex; gap: 8px; align-items: center; }
+.banner { background: var(--true-color-blue-muted, #ddf4ff); border: 1px solid var(--true-color-blue,#0969da); color: var(--text-color-default,#1f2328); padding: 8px 12px; border-radius: 8px; font-size: 12.5px; margin-bottom: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; overflow-wrap: anywhere; }
+.banner > span:not(.spin):not(.spacer) { flex: 1 1 200px; min-width: 0; }
+.banner > .btn { margin-left: auto; }
 .md { font-size: 13px; line-height: 1.55; }
 .md h1,.md h2,.md h3 { font-size: 15px; margin: 14px 0 6px; }
 .md code { font-family: var(--font-mono,monospace); background: var(--background-color-muted,#f6f8fa); padding: 1px 4px; border-radius: 4px; font-size: 12px; }
@@ -117,19 +143,6 @@ ul.steps li:last-child { border-bottom: none; }
 .spin { width:13px; height:13px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; display:inline-block; animation: sp .7s linear infinite; }
 @keyframes sp { to { transform: rotate(360deg); } }
 
-/* journey stepper */
-.stepper { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; }
-.stepper .step { display: flex; align-items: center; gap: 7px; }
-.stepper .ix { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--border-color-default,#8c959f); color: var(--text-color-muted,#656d76); display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; flex: 0 0 auto; }
-.stepper .lbl { font-size: 12.5px; color: var(--text-color-muted,#656d76); }
-.stepper .step.done .ix { background: var(--true-color-green,#1a7f37); border-color: var(--true-color-green,#1a7f37); color: #fff; }
-.stepper .step.done .lbl { color: var(--text-color-default,#1f2328); }
-.stepper .step.current .ix { border-color: var(--true-color-blue,#0969da); color: var(--true-color-blue,#0969da); }
-.stepper .step.current .lbl { color: var(--text-color-default,#1f2328); font-weight: 600; }
-.stepper .bar { width: 24px; height: 2px; background: var(--border-color-default,#d0d7de); margin: 0 5px; flex: 0 0 auto; }
-.stepper .bar.done { background: var(--true-color-green,#1a7f37); }
-
-/* hero next-step */
 .hero { border: 1px solid var(--true-color-blue,#0969da); background: var(--true-color-blue-muted,#ddf4ff); border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
 .hero .eyebrow { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; font-weight: 700; color: var(--true-color-blue,#0969da); }
 .hero .htitle { font-size: 16px; font-weight: 700; margin: 3px 0 4px; }
@@ -142,17 +155,49 @@ ul.steps li:last-child { border-bottom: none; }
 .finding.sev-P1 { border-left-color: var(--true-color-orange,#9a6700); }
 .finding.sev-P2 { border-left-color: var(--true-color-blue,#0969da); }
 .finding.sev-P3 { border-left-color: var(--border-color-default,#8c959f); }
+.finding.sev-mandatory { border-left-color: var(--true-color-red,#cf222e); }
+.finding.sev-potential { border-left-color: var(--true-color-orange,#9a6700); }
+.finding.sev-optional { border-left-color: var(--true-color-blue,#0969da); }
+.finding.sev-information { border-left-color: var(--border-color-default,#8c959f); }
 .finding .ftitle { font-weight: 600; font-size: 13.5px; display: flex; align-items: center; gap: 8px; }
 .finding .fdetail { font-size: 12.5px; color: var(--text-color-default,#1f2328); margin: 6px 0 0; }
+.finding .fcontext { font-size: 12.5px; line-height: 1.45; margin: 6px 0 0; overflow-wrap: anywhere; }
+.finding .fcontext strong { color: var(--text-color-muted,#656d76); }
+.finding .fevidence { margin-top: 8px; font-size: 12px; }
+.finding .fevidence summary { cursor: pointer; font-weight: 600; }
+.finding .fevidence ul { margin: 6px 0 0 18px; padding: 0; }
+.finding .fevidence li { margin: 0 0 4px; overflow-wrap: anywhere; }
+.finding .fevidence pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 4px 0; padding: 6px; background: var(--background-color-muted,#f6f8fa); }
+.finding .fmeta { font-size: 11.5px; color: var(--text-color-muted,#656d76); margin-top: 5px; }
+.finding-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 16px 0 8px; }
+.finding-filters .btn[aria-pressed="true"] { border-color: var(--true-color-blue,#0969da); color: var(--true-color-blue,#0969da); font-weight: 600; }
 .finding .ffiles { font-size: 11.5px; color: var(--text-color-muted,#656d76); margin-top: 7px; display: flex; flex-wrap: wrap; gap: 4px; }
 .finding .ffiles code { font-family: var(--font-mono,monospace); background: var(--background-color-muted,#f6f8fa); padding: 1px 5px; border-radius: 4px; word-break: break-all; }
 
 /* plan & progress steps */
+.plan-review { border-block: 1px solid var(--border-color-default,#d0d7de); padding: 14px 0; margin-bottom: 16px; }
+.plan-review-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.plan-review-head h2 { font-size: 14px; margin: 0; }
+.plan-review-scope { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 0 0 12px; font-size: 12.5px; }
+.plan-review-scope div { display: flex; gap: 5px; min-width: 0; }
+.plan-review-scope dt { color: var(--text-color-muted,#656d76); }
+.plan-review-scope dd { margin: 0; overflow-wrap: anywhere; }
+.plan-editor-label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px; }
+#plan-editor { display: block; width: 100%; min-height: 260px; resize: vertical; font: 12.5px/1.5 var(--font-mono,monospace); color: var(--text-color-default,#1f2328); background: var(--background-color-default,#fff); border: 1px solid var(--border-color-default,#d0d7de); border-radius: 6px; padding: 10px; margin-bottom: 10px; }
+#plan-editor:focus-visible { outline: 2px solid var(--color-focus-outline, var(--true-color-blue,#0969da)); outline-offset: 1px; }
+.plan-review-confirm { display: flex; align-items: flex-start; gap: 7px; margin-bottom: 12px; font-size: 12.5px; }
+.plan-review-confirm input { margin-top: 2px; }
+.plan-links { border: 0; padding: 0; margin: 0 0 12px; min-width: 0; }
+.plan-links legend { font-size: 12px; font-weight: 600; margin-bottom: 6px; }
+.plan-links label { display: grid; grid-template-columns: minmax(0, 1fr) minmax(180px, 1fr); align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12.5px; }
+.plan-links label span { overflow-wrap: anywhere; }
+.plan-links select { width: 100%; min-width: 0; padding: 5px 7px; color: var(--text-color-default,#1f2328); background: var(--background-color-default,#fff); border: 1px solid var(--border-color-default,#d0d7de); border-radius: 4px; }
+@media (max-width: 600px) { .plan-links label { grid-template-columns: 1fr; } }
 .legend { display: flex; gap: 16px; margin-top: 11px; font-size: 11.5px; color: var(--text-color-muted,#656d76); }
 .legend > span { display: inline-flex; align-items: center; }
 .legend .dot { width: 12px; height: 12px; margin: 0 5px 0 0; }
 ul.steps li { align-items: center; }
-ul.steps li .stext { flex: 1; }
+ul.steps li .stext { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 ul.steps li .srhs { flex: 0 0 auto; margin-left: 10px; }
 .smuted { font-size: 11.5px; color: var(--text-color-muted,#656d76); white-space: nowrap; }
 ul.steps li.locked .stext { opacity: .55; }
@@ -179,22 +224,25 @@ ul.checks .crhs { flex: 0 0 auto; }
 nav.tabs button .count.c-red { color: var(--true-color-red,#cf222e); font-weight: 700; }
 nav.tabs button .count.c-amber { color: #9a6700; font-weight: 700; }
 .lockwhy { margin-right: 8px; }
-/* recommended-approach guide */
-.card.guide { background: var(--background-color-muted, #f6f8fa); }
-.flow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
-.flow .fstep { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border-color-default,#d0d7de); background: var(--background-color-default,#fff); color: var(--text-color-muted,#656d76); }
-.flow .fstep.on { border-color: var(--true-color-blue,#0969da); color: var(--true-color-blue,#0969da); font-weight: 600; }
-.flow .fstep.past { color: var(--true-color-green,#1a7f37); border-color: var(--true-color-green,#1a7f37); }
-.flow .farrow { color: var(--text-color-muted,#8c959f); font-size: 12px; }
 /* autopilot */
 .banner-auto { border-color: var(--true-color-blue,#0969da); background: var(--true-color-blue-muted,#ddf4ff); align-items: center; }
-.card.autopilot { border-color: var(--true-color-blue,#0969da); }
 .badge.b-blue { background: var(--true-color-blue-muted,#ddf4ff); color: var(--true-color-blue,#0969da); }
 .apc { font-size: 11.5px; color: var(--text-color-muted,#656d76); margin-left: 6px; }
 ul.aplog { list-style: none; margin: 8px 0 12px; padding: 8px 12px; border: 1px solid var(--border-color-default,#d0d7de); border-radius: 8px; background: var(--background-color-muted,#f6f8fa); display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; }
 ul.aplog li { display: block; }
 .apok { color: var(--true-color-green,#1a7f37); font-weight: 700; }
 .apno { color: var(--true-color-red,#cf222e); font-weight: 700; }
+@media (max-width: 600px) {
+    header.top { padding: 12px 12px 0; }
+    main { padding: 12px 12px 32px; }
+    .global-controls { flex: 1 1 100%; min-width: 0; flex-wrap: wrap; }
+    .global-controls .branch { max-width: min(45vw, 180px); min-width: 0; }
+    .utility-menu { margin-left: auto; }
+    .workflow-next { flex-basis: 100%; }
+    .workflow-next .btn { margin-left: 0; }
+    ul.steps li { flex-wrap: wrap; }
+    ul.steps li .srhs { flex: 1 1 100%; min-width: 0; margin-left: 25px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+}
 `;
 
 function clientMain() {
@@ -204,9 +252,20 @@ function clientMain() {
     const apiToken = boot.token || "";
     const tokenQuery = apiToken ? "?token=" + encodeURIComponent(apiToken) : "";
     let state = null;
-    let activeTab = boot.initialTab || "overview";
+    const legacyTabs = { overview: "assessment", tasks: "assessment", summary: "validation" };
+    let activeTab = legacyTabs[boot.initialTab] || boot.initialTab || "assessment";
     let pending = null;
     let autopilotRunning = false;
+    let entryResolved = false;
+    let planEditing = false;
+    let planDraft = null;
+    let planBaseRevision = null;
+    let planBaseAdopting = false;
+    let planBaseReportRevision = null;
+    let planBaseProgressRevision = null;
+    let planBaseAssessmentId = null;
+    let severityFilter = "all";
+    let batchConfirm = false;
 
     const $ = (sel) => document.querySelector(sel);
     const esc = (s) =>
@@ -222,12 +281,19 @@ function clientMain() {
         toast._t = setTimeout(() => t.classList.remove("show"), 2600);
     }
 
+    function routeFirstSnapshot(next) {
+        if (entryResolved || !next || !next.ok) return;
+        entryResolved = true;
+        if (next.doctor && next.doctor.overall === "blocked") activeTab = "readiness";
+    }
+
     function statusBadge(status) {
         const map = {
             completed: ["b-green", "Completed"],
             in_progress: ["b-amber", "In progress"],
             not_started: ["b-gray", "Not started"],
             done: ["b-green", "Done"],
+            unmatched: ["b-gray", "Not in plan"],
             pending: ["b-gray", "Pending"],
             failed: ["b-red", "Failed"],
             not_run: ["b-gray", "Not run"],
@@ -242,100 +308,112 @@ function clientMain() {
         const cls = "btn" + (opts.primary ? " primary" : "");
         // While Autopilot runs, freeze manual actions so a stray click can't inject
         // a competing prompt into the same session — except Stop and tab navigation.
-        const frozen = autopilotRunning && kind !== "autopilot_stop" && kind !== "autopilot_dismiss" && String(kind).indexOf("goto:") !== 0;
-        const dis = pending || frozen ? " disabled" : "";
+        const frozen = autopilotRunning && kind !== "autopilot_stop" && kind !== "autopilot_dismiss" && kind !== "filter_severity" && String(kind).indexOf("goto:") !== 0;
+        const needsReview = state && (state.assessmentConfigStatus === "invalid" ||
+            (state.assessmentConfig && (state.reportConfigStatus !== "current" || state.planConfigStatus !== "current")));
+        const execution = ["run_task", "run_skill", "run_cve", "generate_tests", "run_build_tests", "run_consistency", "run_completeness", "work_step", "auto_step", "fix_finding", "open_pr", "autopilot_start"].includes(kind);
+        const mutating = ["run_task", "run_skill", "generate_tests", "work_step", "auto_step", "fix_finding", "open_pr", "create_skill", "autopilot_start"].includes(kind);
+        const configBlocked = needsReview && (execution || (kind === "generate_plan" && state.reportConfigStatus !== "current"));
+        const approvalBlocked = (mutating || kind === "confirm_recommendations") && state && state.planApprovalStatus !== "approved";
+        const dis = pending || frozen || configBlocked || approvalBlocked || (kind === "approve_plan" && planEditing) ? " disabled" : "";
+        const title = configBlocked ? ' title="Review the assessment and plan for the selected settings"' :
+            approvalBlocked ? ' title="Approve the current plan before making changes"' : "";
+        const pressed = typeof opts.pressed === "boolean" ? ' aria-pressed="' + opts.pressed + '"' : "";
         return (
             '<button class="' + cls + '" data-kind="' + esc(kind) + '" data-payload="' +
-            esc(JSON.stringify(payload || {})) + '"' + dis + ">" + esc(label) + "</button>"
+            esc(JSON.stringify(payload || {})) + '"' + title + pressed + dis + ">" + esc(label) + "</button>"
         );
+    }
+
+    function workflowStatus(s) {
+        const blocked = s.doctor?.overall === "blocked";
+        const next = blocked ? { title: "Resolve required environment tools" } : heroNext(s);
+        const reportReady = !!s.report && s.reportStatus === "ready";
+        const needsAssessment = !reportReady || (s.assessmentConfig && s.reportConfigStatus !== "current");
+        const needsPlan = !s.plan?.exists || (s.assessmentConfig && s.planConfigStatus !== "current") || s.planApprovalStatus !== "approved";
+        const target = blocked ? "readiness" : next.target;
+        const steps = s.progress?.steps?.length ? s.progress.steps : (s.plan?.steps || []);
+        const remaining = steps.filter((step) => step.status !== "done").length;
+        const phase = blocked ? "Readiness blocked" : s.status === "completed" ? "Ready to ship" :
+            s.ordering?.activePhase || (needsAssessment ? reportReady ? "Assessment review" : "Assessment" :
+            needsPlan ? s.plan?.exists ? "Plan review" : "Plan" : remaining ? "Remediation" : "Validation");
+        const progressText = steps.length ? esc(s.percent || 0) + '% complete · ' + remaining + ' remaining' :
+            !reportReady || blocked ? "Not started" : needsAssessment ? "Report available · settings need review" : "Report ready · plan not started";
+        let html = '<section class="workflow-overview" aria-label="Workflow status"><div class="workflow-stage">' +
+            '<strong>' + esc(phase) + '</strong><span>' + progressText +
+            (s.scannedAt ? '</span><span>Last checked ' + esc(fmtDate(s.scannedAt)) : '') +
+            '</span></div><div class="workflow-next"><span>Next</span><strong>' + esc(next.title) + '</strong>' +
+            (next.eyebrow === "Final step" ? btn("Open pull request", "open_pr", {}, { primary: true }) :
+                activeTab === target ? "" : btn("Open " + (target === "readiness" ? "Readiness" : target === "assessment" ? "Assess" : target === "plan" ? "Plan" : "Validate"), "goto:" + target)) +
+            '</div>';
+        if (s.summary?.exists && s.summary.markdown) {
+            html += '<details class="summary-details"><summary>Summary</summary><div class="md">' + miniMd(s.summary.markdown) + '</div></details>';
+        }
+        return html + '</section>';
     }
 
     // ---- tab renderers -------------------------------------------------------
 
-    function overviewTab(s) {
-        let html = "";
-
-        // Environment readiness nudge — surfaces a blocker before the user starts.
-        const d = s.doctor;
-        if (d && d.overall === "blocked") {
-            html += '<div class="banner banner-red">⚠ Your environment isn\'t ready — a required tool is missing. ' + btn("Open Readiness →", "goto:readiness") + "</div>";
-        } else if (d && d.overall === "caution") {
-            html += '<div class="banner">Some environment items need a look before you go further. ' + btn("Open Readiness →", "goto:readiness") + "</div>";
+    function assessmentSettings(s) {
+        const config = s.assessmentConfig || {};
+        const modules = [".", ...((s.assessment && s.assessment.modules) || [])];
+        if (config.module && !modules.includes(config.module)) modules.push(config.module);
+        const moduleChoice = config.module || ".";
+        const javaChoice = config.targetJava || 21;
+        let html = '<section class="assessment-settings"><h2>Assessment settings</h2><div class="setting-fields">' +
+            '<label>Repository<span class="setting-value">' + esc(s.repoPath) + '</span></label>' +
+            '<label for="assessment-module">Scope<select id="assessment-module">';
+        for (const module of modules) {
+            html += '<option value="' + esc(module) + '"' + (module === moduleChoice ? " selected" : "") + '>' +
+                esc(module === "." ? "Whole repository" : module) + '</option>';
         }
-
-        // Journey stepper — always shows where you are in the workflow.
-        html += '<div class="card"><h2>Your modernization journey</h2>' + journeyHtml(s) + "</div>";
-
-        // One adaptive "do this next" hero so the next click is never ambiguous.
-        const hero = heroNext(s);
-        html +=
-            '<div class="hero"><div class="eyebrow">' + esc(hero.eyebrow) + "</div>" +
-            '<div class="htitle">' + esc(hero.title) + "</div>" +
-            '<div class="hbody">' + hero.body + "</div>" +
-            '<div class="actions">' + hero.actions + "</div></div>";
-
-        // Autopilot nudge — once there's a checklist with work left, offer to run it
-        // hands-free. Hidden while a run is already active (the strip covers that).
-        const planSteps = (s.progress && s.progress.steps.length ? s.progress.steps : (s.plan ? s.plan.steps : [])) || [];
-        const pendingSteps = planSteps.filter((x) => x.status !== "done").length;
-        const envBlocked = d && d.overall === "blocked";
-        if (pendingSteps > 0 && !(s.autopilot && s.autopilot.running)) {
-            const cta = envBlocked
-                ? btn("Open Readiness →", "goto:readiness")
-                : btn("▶ Run on autopilot", "autopilot_start", { scope: "phase" }, { primary: true }) + btn("See in Plan →", "goto:plan");
-            html +=
-                '<div class="card autopilot"><h2>⚡ Run on autopilot <span class="badge b-blue">beta</span></h2>' +
-                '<p class="muted" style="margin:0 0 10px">Instead of clicking each step, let Copilot work the ' + pendingSteps +
-                " remaining step(s) in order and update this dashboard live. It pauses at the end of the phase and does not commit.</p>" +
-                '<div class="actions">' + cta + "</div></div>";
+        html += '</select></label><label for="assessment-java">Target Java<select id="assessment-java">';
+        for (const version of [17, 21]) {
+            html += '<option value="' + version + '"' + (version === javaChoice ? " selected" : "") + '>Java ' + version + '</option>';
         }
-
-        // Findings snapshot (only once an assessment has been run).
-        const rep = s.report;
-        if (rep && rep.findings && rep.findings.length) {
-            const by = sevCounts(rep.findings);
-            html += '<div class="card"><h2>Assessment findings <span class="spacer"></span>' + btn("Open Assessment →", "goto:assessment") + "</h2>";
-            if (rep.summary) html += '<p class="muted" style="margin:0 0 10px">' + esc(rep.summary) + "</p>";
-            html += '<div class="sevrow">' + sevChip("P0", by.P0) + sevChip("P1", by.P1) + sevChip("P2", by.P2) + sevChip("P3", by.P3) + "</div></div>";
-        }
-
-        // Stack facts.
-        const a = s.assessment || {};
-        const jv = a.javaVersion ? "Java " + a.javaVersion : "Java (unknown)";
-        html +=
-            '<div class="card"><h2>Stack</h2><div class="grid">' +
-            kv("Build tool", a.buildTool || "—") +
-            kv("Java version", esc(jv)) +
-            kv("Spring Boot", a.springBoot ? "Yes" + (a.springVersion ? " " + esc(a.springVersion) : "") : "No") +
-            kv("Container", a.hasDockerfile ? "Dockerfile ✓" : "None") +
-            kv("Git branch", s.git && s.git.branch ? esc(s.git.branch) : "—") +
-            kv("Working tree", s.git ? (s.git.dirty ? s.git.changedFiles + " changed" : "clean") : "—") +
-            "</div></div>";
-
-        const rel = (s.tasks || []).filter((t) => t.relevant);
-        if (rel.length) {
-            html += '<div class="card relevant"><h2>Detected in this repo <span class="badge b-blue">' + rel.length + "</span></h2>";
-            rel.forEach((t) => (html += taskRow(t)));
-            html += "</div>";
-        }
+        html += '</select></label><label>Cloud<span class="setting-value">Azure</span></label></div>' +
+            btn(s.report || s.assessmentConfig || s.reportStatus === "invalid" ? "Re-run assessment" : "Run assessment", "submit_assessment", {}, { primary: true }) + '</section>';
         return html;
     }
 
     function assessmentTab(s) {
         const rep = s.report;
-        if (!rep || !(rep.findings && rep.findings.length)) {
-            return emptyState(
-                "No assessment yet",
-                "Run an assessment to scan this repo for its Java runtime, dependencies, vulnerabilities, and Azure cloud-readiness gaps. Findings land here as a prioritized, clickable checklist — nothing in your code changes.",
-                btn("Run assessment", "start_assessment", {}, { primary: true })
+        const settings = assessmentSettings(s) + (s.assessmentConfigStatus === "invalid" ?
+            '<div class="banner banner-red">Saved assessment settings are invalid. Re-run the assessment to replace them.</div>' : "");
+        if (s.reportStatus === "invalid") {
+            return settings + emptyState(
+                "Assessment results unavailable",
+                "The assessment file is invalid or incomplete. Re-run the assessment to regenerate it."
             );
         }
-        const by = sevCounts(rep.findings);
-        let html = '<div class="card"><h2>Assessment results';
+        if (s.reportStatus === "running") {
+            return settings + emptyState("Assessment in progress", "The report is still being generated. Refresh to see the finished results.", btn("Refresh", "refresh"));
+        }
+        if (!rep) {
+            const existing = !!s.assessmentConfig || (s.plan && s.plan.exists) || (s.progress && s.progress.exists);
+            return settings + emptyState(
+                existing ? "Assessment results unavailable" : "No assessment yet",
+                existing ? "A plan exists, but its assessment results are missing. Re-run the assessment to recover them." :
+                    "Run an assessment to scan this repo for its Java runtime, dependencies, vulnerabilities, and Azure cloud-readiness gaps. Findings land here as a prioritized, clickable checklist — nothing in your code changes."
+            );
+        }
+        const levels = severityLevels(rep);
+        const by = sevCounts(rep.findings, levels);
+        if (severityFilter !== "all" && !levels.includes(severityFilter)) severityFilter = "all";
+        const stale = s.assessmentConfig && s.reportConfigStatus !== "current";
+        const notice = stale ? '<div class="banner banner-red">This assessment report is outdated or its settings cannot be verified. Re-run the assessment before using these findings. ' + btn("Re-run assessment", "start_assessment") + '</div>' : "";
+        const nativeNotice = s.reportSource === "native" ? '<div class="banner">Showing the native assessment report from <code>' + esc(s.reportPath) +
+            '</code>. Its scope is not linked to this canvas plan; review settings and run an assessment before executing steps.</div>' : "";
+        let html = settings + nativeNotice + notice + '<div class="card"><h2>Assessment results';
         if (rep.generatedAt) html += ' <span class="muted" style="font-weight:400">' + esc(fmtDate(rep.generatedAt)) + "</span>";
         html += '<span class="spacer"></span>' + btn("Re-run", "start_assessment") + "</h2>";
         if (rep.headline) html += '<p style="margin:0 0 6px;font-weight:600">' + esc(rep.headline) + "</p>";
         if (rep.summary) html += '<p class="muted" style="margin:0 0 10px">' + esc(rep.summary) + "</p>";
+        if (rep.assessmentConfig) {
+            const config = rep.assessmentConfig;
+            html += '<div class="grid" style="margin-bottom:10px">' + kv("Scope", esc(config.module || ".")) +
+                kv("Target", "Java " + esc(config.targetJava)) + kv("Cloud", esc(config.cloud)) + '</div>';
+        }
         if (rep.stack) {
             const st = rep.stack;
             html += '<div class="grid" style="margin-bottom:10px">' +
@@ -346,9 +424,25 @@ function clientMain() {
                 (st.container ? kv("Container", esc(st.container)) : "") +
                 "</div>";
         }
-        html += '<div class="sevrow">' + sevChip("P0", by.P0) + sevChip("P1", by.P1) + sevChip("P2", by.P2) + sevChip("P3", by.P3) + "</div></div>";
+        html += '<div class="sevrow">' + levels.map((level) => sevChip(level, by[level])).join("") + "</div></div>";
+        if (!rep.findings.length) html += '<div class="card"><p class="muted">No findings in this report.</p></div>';
+        else {
+            const stepIds = new Set(rep.findings.flatMap((finding) => finding.planSteps?.filter((step) => step.id && step.status !== "done").map((step) => step.id) || []));
+            if (stepIds.size) {
+                html += '<div class="actions finding-batch">' + (batchConfirm ?
+                    '<span>Run ' + stepIds.size + ' approved finding step(s) in plan order?</span>' +
+                        btn("Start batch", "autopilot_start", { scope: "recommendations" }, { primary: true }) + btn("Cancel", "cancel_recommendations") :
+                    btn("Run approved findings (" + stepIds.size + ")", "confirm_recommendations", {}, { primary: true })) + "</div>";
+            }
+            html += '<div class="finding-filters" role="group" aria-label="Filter findings by severity">';
+            ["all", ...levels].forEach((severity) => {
+                html += btn(severity === "all" ? "All" : severityLabel(severity), "filter_severity", { severity }, { pressed: severityFilter === severity });
+            });
+            html += "</div>";
+        }
 
-        ["P0", "P1", "P2", "P3"].forEach((sev) => {
+        levels.forEach((sev) => {
+            if (severityFilter !== "all" && severityFilter !== sev) return;
             const items = rep.findings.filter((x) => x.severity === sev);
             if (!items.length) return;
             html += '<div class="cat">' + esc(sevName(sev)) + "</div>";
@@ -365,100 +459,132 @@ function clientMain() {
 
     // ---- assessment helpers --------------------------------------------------
 
-    function journeyHtml(s) {
-        const labels = ["Assess", "Remediate", "Validate", "Ship"];
-        const hasPlan = !!((s.report && s.report.findings) || (s.plan && s.plan.exists) || (s.progress && s.progress.exists));
-        const gates = s.gates || {};
-        const anyGate = Object.keys(gates).some((k) => gates[k] && gates[k] !== "not_run");
-        const done = s.status === "completed";
-        let cur;
-        if (done) cur = 4;
-        else if (anyGate) cur = 2;
-        else if (hasPlan) cur = 1;
-        else cur = 0;
-        let h = '<div class="stepper">';
-        labels.forEach((label, i) => {
-            if (i > 0) h += '<span class="bar' + (i <= cur ? " done" : "") + '"></span>';
-            const cls = i < cur ? "done" : i === cur ? "current" : "";
-            const mark = i < cur ? "✓" : String(i + 1);
-            h += '<div class="step ' + cls + '"><span class="ix">' + mark + '</span><span class="lbl">' + esc(label) + "</span></div>";
-        });
-        return h + "</div>";
-    }
-
     function heroNext(s) {
         const rep = s.report;
         const findings = rep && rep.findings ? rep.findings : [];
-        const hasReport = findings.length > 0;
-        const p0 = findings.filter((f) => f.severity === "P0");
-        const p1 = findings.filter((f) => f.severity === "P1");
+        const hasReport = !!rep && s.reportStatus !== "invalid";
+        const actionable = findings.filter((finding) => finding.planSteps?.some((step) => step.id && step.status !== "done"));
+        const p0 = actionable.filter((finding) => ["P0", "mandatory"].includes(finding.severity));
+        const p1 = actionable.filter((finding) => ["P1", "potential"].includes(finding.severity));
         const gates = s.gates || {};
         const anyGate = Object.keys(gates).some((k) => gates[k] && gates[k] !== "not_run");
         const hasPlan = !!((s.plan && s.plan.exists) || (s.progress && s.progress.exists));
+        const checks = [
+            { keys: ["build", "tests"], title: "Build and run unit tests" },
+            { keys: ["cve"], title: "Check for vulnerabilities" },
+            { keys: ["consistency"], title: "Check consistency" },
+            { keys: ["completeness"], title: "Check completeness" },
+        ];
+        const nextCheck = checks.find((check) => check.keys.some((key) => gates[key] !== "done"));
 
-        if (s.status === "completed") {
+        if (s.assessmentConfigStatus === "invalid") {
+            return {
+                eyebrow: "Assessment needs attention",
+                title: "Saved assessment settings are invalid",
+                target: "assessment",
+            };
+        }
+        if (s.reportStatus === "invalid" || (s.reportStatus === "missing" && (hasPlan || s.assessmentConfig))) {
+            return {
+                eyebrow: "Assessment needs attention",
+                title: "Assessment results unavailable",
+                target: "assessment",
+            };
+        }
+        if (s.assessmentConfig && s.reportConfigStatus !== "current") {
+            return {
+                eyebrow: "Assessment needs attention",
+                title: "Review assessment settings",
+                target: "assessment",
+            };
+        }
+        if (s.assessmentConfig && s.planConfigStatus !== "current") {
+            return {
+                eyebrow: "Plan needs attention",
+                title: s.plan?.adoptable ? "Review and link the existing plan" : "Generate a plan for this assessment",
+                target: "plan",
+            };
+        }
+        if (hasPlan && s.assessmentConfig && s.planApprovalStatus !== "approved") {
+            return {
+                eyebrow: "Plan needs approval",
+                title: "Review the plan before changing code",
+                target: "plan",
+            };
+        }
+        if (s.status === "completed" && !nextCheck) {
             return {
                 eyebrow: "Final step",
                 title: "Ship your changes",
-                body: "Validations are complete. Open a pull request to hand off the modernized service.",
-                actions: btn("Open a pull request", "open_pr", {}, { primary: true }) + btn("View summary", "goto:summary"),
+                target: "validation",
             };
         }
         if (!hasReport && !hasPlan) {
             return {
                 eyebrow: "Start here",
                 title: "Assess the project",
-                body: "Scan the repo for its Java runtime, dependencies, known CVEs, and Azure cloud-readiness gaps. Nothing changes in your code — you get a prioritized list of findings to work through.",
-                actions: btn("Run assessment", "start_assessment", {}, { primary: true }),
+                target: "assessment",
             };
         }
         if (p0.length) {
             return {
                 eyebrow: "Blocker — fix this first",
                 title: p0[0].title,
-                body: esc(p0[0].detail || "A P0 issue is blocking modernization. Resolve it before moving on."),
-                actions: heroAction(p0[0]) + btn("See all findings", "goto:assessment"),
+                target: "assessment",
             };
         }
-        if (hasReport && !anyGate) {
-            if (p1.length) {
-                return {
-                    eyebrow: "Recommended next",
-                    title: "Start remediation: " + p1[0].title,
-                    body: esc(p1[0].detail || "Work through the high-priority findings first."),
-                    actions: heroAction(p1[0]) + btn("See all findings", "goto:assessment"),
-                };
-            }
+        if (p1.length) {
             return {
                 eyebrow: "Recommended next",
-                title: "Work through the findings",
-                body: "Open the Assessment tab and resolve findings by priority. Each one has a button that hands the fix to the agent.",
-                actions: btn("Open Assessment", "goto:assessment", {}, { primary: true }),
+                title: "Start remediation: " + p1[0].title,
+                target: "assessment",
             };
         }
-        return {
-            eyebrow: "Recommended next",
-            title: "Validate your changes",
-            body: "Build the project, run unit tests, and re-check CVEs to confirm the migration holds.",
-            actions: btn("Build & run tests", "run_build_tests", {}, { primary: true }) + btn("Open Validation", "goto:validation"),
-        };
-    }
-
-    function heroAction(f) {
-        const act = f.action;
-        if (act && act.kind && act.kind !== "fix_finding") {
-            return btn(act.label || "Run this step", act.kind, act.payload || {}, { primary: true });
+        if (actionable.length) {
+            return {
+                eyebrow: "Recommended next",
+                title: "Work through the planned findings",
+                target: "assessment",
+            };
         }
-        return btn((act && act.label) || "Help me fix this", "fix_finding", findingCtx(f), { primary: true });
+        if (hasReport && findings.length && !anyGate) {
+            return {
+                eyebrow: "Recommended next",
+                title: "Review findings against the plan",
+                target: "assessment",
+            };
+        }
+        return nextCheck ? {
+            eyebrow: "Recommended next",
+            title: (nextCheck.keys.some((key) => gates[key] === "failed") ? "Retry: " : "Next: ") + nextCheck.title,
+            target: "validation",
+        } : {
+            eyebrow: "Validation complete",
+            title: "Review your results",
+            target: "validation",
+        };
     }
 
     function findingCard(x, ord) {
         const locked = isFindingLocked(x, ord);
         let h = '<div class="finding sev-' + esc(x.severity || "P3") + (locked ? " locked" : "") + '">';
         h += '<div class="ftitle"><span class="badge ' + sevBadgeClass(x.severity) + '">' + esc(x.severity || "—") + "</span>" + esc(x.title) + "</div>";
+        if (x.domain) h += '<div class="fmeta">' + esc(x.domain) + (x.category ? " · " + esc(x.category) : "") + "</div>";
+        if (x.status) h += '<div class="fmeta">' + statusBadge(x.status) + "</div>";
         if (x.detail) h += '<div class="fdetail">' + esc(x.detail) + "</div>";
+        if (x.impact) h += '<p class="fcontext"><strong>Impact:</strong> ' + esc(x.impact) + "</p>";
+        if (x.recommendation) h += '<p class="fcontext"><strong>Suggested action:</strong> ' + esc(x.recommendation) + "</p>";
         if (x.files && x.files.length) {
             h += '<div class="ffiles">' + x.files.map((p) => "<code>" + esc(p) + "</code>").join("") + "</div>";
+        }
+        if (x.evidence && x.evidence.length) {
+            h += '<details class="fevidence"><summary>Evidence (' + x.evidence.length + ")</summary><ul>";
+            x.evidence.forEach((item) => {
+                const location = item.file ? item.file + (item.line ? ":" + item.line : "") : (item.line ? "Line " + item.line : "");
+                h += "<li>" + (location ? "<code>" + esc(location) + "</code> " : "") + esc(item.detail || "") +
+                    (item.snippet ? '<pre>' + esc(item.snippet) + '</pre>' : "") + "</li>";
+            });
+            h += "</ul></details>";
         }
         h += '<div class="actions">' + findingActions(x, ord) + "</div>";
         return h + "</div>";
@@ -470,41 +596,39 @@ function clientMain() {
     }
     function isFindingLocked(x, ord) {
         if (!ord || ord.activeRank == null) return false;
-        const r = sevRank(x.severity);
+        const r = x.planSteps?.[0]?.rank ?? sevRank(x.severity);
         return r != null && r > ord.activeRank;
     }
 
     function findingActions(x, ord) {
-        const act = x.action;
-        if (isFindingLocked(x, ord)) {
-            const why = '<span class="smuted lockwhy">🔒 fix ' + esc(shortPhase(ord.activePhase)) + " issues first</span>";
-            if (act && act.kind && act.kind !== "fix_finding") {
-                return why + btn(act.label || "Run this step", act.kind, act.payload || {}) + btn("Help me fix this", "fix_finding", findingCtx(x));
-            }
-            return why + btn((act && act.label) || "Help me fix this", "fix_finding", findingCtx(x));
-        }
-        if (act && act.kind && act.kind !== "fix_finding") {
-            return btn(act.label || "Run this step", act.kind, act.payload || {}, { primary: true }) + btn("Help me fix this", "fix_finding", findingCtx(x));
-        }
-        return btn((act && act.label) || "Help me fix this", "fix_finding", findingCtx(x), { primary: true });
+        const explain = btn("Explain & decide", "explain_finding", { findingId: x.id });
+        const step = x.planSteps?.find((item) => item.id && item.status !== "done");
+        if (x.status === "done") return explain;
+        if (!step) return explain + '<span class="smuted">No matching planned action. ' + btn("Review Plan", "goto:plan") + "</span>";
+        const locked = isFindingLocked(x, ord);
+        const fix = btn("Fix this", "fix_finding", { findingId: x.id, stepId: step.id }, { primary: !locked });
+        return locked ? '<span class="smuted lockwhy">🔒 after ' + esc(shortPhase(ord.activePhase)) + "</span>" + fix + explain : fix + explain;
     }
-
-    function findingCtx(x) {
-        return { title: x.title, detail: x.detail, files: x.files, severity: x.severity };
+    function severityLevels(report) {
+        return report && report.severityScale === "unified" ? ["mandatory", "potential", "optional", "information"] : ["P0", "P1", "P2", "P3"];
     }
-    function sevCounts(f) {
-        const c = { P0: 0, P1: 0, P2: 0, P3: 0 };
+    function sevCounts(f, levels = ["P0", "P1", "P2", "P3"]) {
+        const c = Object.fromEntries(levels.map((level) => [level, 0]));
         (f || []).forEach((x) => { if (c[x.severity] != null) c[x.severity]++; });
         return c;
     }
     function sevBadgeClass(sev) {
-        return { P0: "b-red", P1: "b-amber", P2: "b-blue", P3: "b-gray" }[sev] || "b-gray";
+        return { P0: "b-red", P1: "b-amber", P2: "b-blue", P3: "b-gray",
+            mandatory: "b-red", potential: "b-amber", optional: "b-blue", information: "b-gray" }[sev] || "b-gray";
     }
     function sevChip(sev, n) {
-        return '<span class="badge ' + sevBadgeClass(sev) + '">' + esc(sev) + " · " + (n || 0) + "</span>";
+        return '<span class="badge ' + sevBadgeClass(sev) + '">' + esc(severityLabel(sev)) + " · " + (n || 0) + "</span>";
+    }
+    function severityLabel(sev) {
+        return { mandatory: "Mandatory", potential: "Potential", optional: "Optional", information: "Information" }[sev] || sev;
     }
     function sevName(sev) {
-        return { P0: "P0 · Blockers", P1: "P1 · High priority", P2: "P2 · Medium priority", P3: "P3 · Low / platform" }[sev] || sev;
+        return { P0: "P0 · Blockers", P1: "P1 · High priority", P2: "P2 · Medium priority", P3: "P3 · Low / platform" }[sev] || severityLabel(sev);
     }
     function fmtDate(iso) {
         try {
@@ -523,7 +647,7 @@ function clientMain() {
         const a = s && s.autopilot;
         if (!a) return "";
         if (a.running) {
-            const scopeLabel = a.scope === "all" ? "all phases" : "this phase";
+            const scopeLabel = a.scope === "recommendations" ? "approved findings" : (a.scope === "all" ? "all phases" : "this phase");
             const now = a.current
                 ? "Working: " + esc(a.current.title) + (a.current.section ? ' <span class="smuted">' + esc(a.current.section) + "</span>" : "")
                 : "Selecting the next step…";
@@ -546,12 +670,15 @@ function clientMain() {
         };
         const label = labels[a.status] || "finished";
         const bad = a.status === "error" || a.status === "stuck";
-        let note = "Review the changes (nothing was committed), then continue.";
+        let note = a.scope === "recommendations" && a.status === "completed" ?
+            "Review the changes; nothing was committed." : "Review the changes (nothing was committed), then continue.";
         if (a.stuck) note = "Stuck on: " + esc(a.stuck) + ". Open it in Plan &amp; Progress to finish it yourself, then resume.";
         if (a.error) note = esc(a.error);
-        const more =
+        const more = a.scope === "recommendations" ?
+            (a.status === "completed" ? "" : btn("Resume approved findings", "autopilot_start", { scope: "recommendations" }, { primary: true })) +
+                btn("Dismiss", "autopilot_dismiss", {}) :
             btn("▶ Continue (next phase)", "autopilot_start", { scope: "phase" }, { primary: true }) +
-            btn("Dismiss", "autopilot_dismiss", {});
+                btn("Dismiss", "autopilot_dismiss", {});
         return (
             '<div class="banner ' + (bad ? "banner-red" : "banner-auto") + '">' +
             "<span><b>Autopilot " + esc(label) + ".</b> Completed " + a.completed.length + " step(s). " + note + "</span>" +
@@ -571,39 +698,73 @@ function clientMain() {
                 (c.error ? ' <span class="apno">' + esc(c.error) + "</span>" : "") +
                 "</li>";
         });
-        return h + "</ul>";
+        return '<details class="run-log"><summary>Execution history (' + a.completed.length + ')</summary>' + h + "</ul></details>";
     }
 
-    // Autopilot launch card on the Plan tab.
-    function autopilotCard(s) {
-        const running = !!(s.autopilot && s.autopilot.running);
-        const blocked = s.doctor && s.doctor.overall === "blocked";
-        let body =
-            '<p class="muted" style="margin:0 0 10px">Let Copilot work the checklist for you. Autopilot runs each eligible step <b>in order</b>, ' +
-            "updates <code>progress.md</code>, and streams results here live. It pauses at the end of the phase, stops if a step needs a decision, " +
-            "and <b>does not commit</b> — so you stay in control and can review the diff.</p>";
-        let actions;
-        if (running) {
-            actions = btn("■ Stop autopilot", "autopilot_stop", {});
-        } else if (blocked) {
-            actions = '<span class="smuted">Environment is not ready. </span>' + btn("Open Readiness →", "goto:readiness");
+    function planReview(s) {
+        if (!s.plan || !s.plan.exists) return "";
+        const config = s.assessmentConfig;
+        const current = config && s.reportConfigStatus === "current" && s.planConfigStatus === "current";
+        const adoptable = config && s.reportConfigStatus === "current" && s.plan.adoptable;
+        const approved = s.planApprovalStatus === "approved";
+        const badge = approved ? '<span class="badge b-green">Approved</span>' : '<span class="badge b-amber">Approval required</span>';
+        let body = config ? '<dl class="plan-review-scope"><div><dt>Module</dt><dd>' + esc(config.module) +
+            '</dd></div><div><dt>Target</dt><dd>Java ' + esc(config.targetJava) + ' · ' + esc(config.cloud) +
+            '</dd></div><div><dt>File</dt><dd>' + esc(s.plan.path || "plan.md") + '</dd></div></dl>' : "";
+        if ((current || adoptable) && planEditing) {
+            if (planBaseRevision !== s.plan.revision) body += '<div class="banner banner-red">The plan changed on disk while you were editing. Refresh before saving.</div>';
+            body += '<label class="plan-editor-label" for="plan-editor">Plan text</label>' +
+                '<textarea id="plan-editor" spellcheck="false">' + esc(planDraft == null ? s.plan.editableMarkdown : planDraft) + '</textarea>';
+            const linked = (s.plan.steps || []).filter((step) => step.id && s.report?.findings?.some((finding) =>
+                finding.planSteps?.some((item) => item.id === step.id)));
+            if (linked.length) {
+                const tasks = s.tasks || [];
+                const skills = s.skills || [];
+                body += '<fieldset class="plan-links"><legend>Finding-linked execution</legend>';
+                for (const step of linked) {
+                    const selected = step.taskId ? "task:" + step.taskId : step.skillFolder ? "skill:" + encodeURIComponent(step.skillFolder) : "";
+                    const option = (value, label) => '<option value="' + esc(value) + '"' + (value === selected ? ' selected' : '') + '>' + esc(label) + '</option>';
+                    body += '<label><span>' + esc(step.title) + '</span><select data-step-link="' + esc(step.id) + '" data-original="' + esc(selected) + '">' +
+                        option("", "Work on step") + tasks.map((task) => option("task:" + task.id, "Task: " + task.name)).join("") +
+                        skills.map((skill) => option("skill:" + encodeURIComponent(skill.folder), "Skill: " + skill.name)).join("") +
+                        (step.taskId && !tasks.some((task) => task.id === step.taskId) ? option(selected, "Unavailable task: " + step.taskId) : "") +
+                        (step.skillFolder && !skills.some((skill) => skill.folder === step.skillFolder) ? option(selected, "Unavailable skill: " + step.skillFolder) : "") +
+                        '</select></label>';
+                }
+                body += '</fieldset>';
+            }
+            if (adoptable) body += '<label class="plan-review-confirm"><input id="confirm-adopt-plan" type="checkbox">' +
+                'I reviewed this plan and its progress and want to link them to assessment ' + esc(config.id) + '.</label>';
+            body += '<div class="actions">' + btn(adoptable ? "Link plan to assessment" : "Save plan", "save_plan", {}, { primary: true }) + btn("Cancel", "cancel_plan") + "</div>";
+        } else if (current) {
+            body += '<div class="actions">' + btn("Edit plan", "edit_plan") +
+                (approved ? "" : btn("Approve plan", "approve_plan", {}, { primary: true })) + "</div>";
+        } else if (adoptable) {
+            body += '<div class="banner banner-amber">This plan and its progress are not yet linked to the current assessment. Review before linking; approval is a separate step.</div>' +
+                '<div class="actions">' + btn("Review and link plan", "edit_plan") + "</div>";
         } else {
-            actions =
-                btn("▶ Run this phase", "autopilot_start", { scope: "phase" }, { primary: true }) +
-                btn("Run all phases", "autopilot_start", { scope: "all" });
+            body += '<div class="banner banner-red">Review the assessment and regenerate the plan before approval.</div>';
         }
-        return '<div class="card autopilot"><h2>⚡ Autopilot <span class="badge b-blue">beta</span></h2>' + body + '<div class="actions">' + actions + "</div></div>";
+        return '<section class="plan-review" aria-label="Plan review"><div class="plan-review-head"><h2>Review plan</h2>' + badge + '</div>' + body + '</section>';
     }
 
     function planTab(s) {
         const usingProgress = !!(s.progress && s.progress.steps.length);
         const steps = (usingProgress ? s.progress.steps : (s.plan ? s.plan.steps : [])) || [];
+        let notice = "";
+        if ((s.assessmentConfigStatus === "invalid" || (s.assessmentConfig && s.planConfigStatus !== "current")) &&
+            ((s.plan && s.plan.exists) || (s.progress && s.progress.exists))) {
+            const reportReady = s.reportConfigStatus === "current";
+            notice = s.plan?.adoptable ? '' : '<div class="banner banner-red">This plan is outdated or its assessment settings cannot be verified. Review it before execution. ' +
+                (reportReady ? btn("Generate plan", "generate_plan") : btn("Re-run assessment", "start_assessment")) + '</div>';
+        }
         if (!steps.length) {
-            return emptyState(
+            return notice + emptyState(
                 "No plan yet",
                 "Run an assessment or generate an upgrade plan. App Modernization writes <code>plan.md</code> and a <code>progress.md</code> checklist, and your steps land here — each unchecked one becomes a button that hands that exact step to the agent.",
-                btn("Run assessment", "start_assessment", {}, { primary: true }) + btn("Generate upgrade plan", "generate_plan", { targetJava: 21 })
-            );
+                btn("Run assessment", "start_assessment", {}, { primary: true }) +
+                (s.assessmentConfig && s.reportConfigStatus === "current" ? btn("Generate upgrade plan", "generate_plan") : "")
+            ) + skillsAccess();
         }
         const src = usingProgress ? "progress.md" : "plan.md";
         const total = steps.length;
@@ -611,31 +772,11 @@ function clientMain() {
         const ord = s.ordering || { activeRank: null, activePhase: null };
 
         // Intro + overall progress + legend.
-        let html = '<div class="card"><h2>Plan &amp; Progress <span class="muted" style="font-weight:400">' + esc(src) + "</span><span class=\"spacer\"></span>" + statusBadge(s.status) + "</h2>";
-        html += '<p class="muted" style="margin:0 0 10px">Your live modernization checklist. Each unchecked step has a <b>Work on this</b> button that hands just that step to the agent in this session — it checks the box here when the step is done.</p>';
+        let html = notice + planReview(s) + '<div class="card"><h2>Plan &amp; Progress <span class="muted" style="font-weight:400">' + esc(src) + "</span><span class=\"spacer\"></span>" + statusBadge(s.status) + "</h2>";
         html += '<div class="progress"><span style="width:' + (s.percent || 0) + '%"></span></div>';
         html += '<p class="muted" style="margin:6px 0 0">' + done + " of " + total + " steps done · " + (s.percent || 0) + "% complete</p>";
         html += '<div class="legend"><span><span class="dot done"></span>Done</span><span><span class="dot in_progress"></span>In progress</span><span><span class="dot pending"></span>To do</span><span>🔒 Do later</span></div>';
         html += "</div>";
-
-        // Recommended-order guide so users don't work steps out of sequence.
-        html += approachGuide(ord);
-
-        // Autopilot: hand the whole phase to the agent instead of clicking each step.
-        html += autopilotCard(s);
-
-        // "Continue here" — the recommended next step: first not-done step in the
-        // active phase (falls back to the first not-done step overall).
-        const next = steps.find((x) => x.status !== "done" && (ord.activeRank == null || x.rank === ord.activeRank)) || steps.find((x) => x.status !== "done");
-        if (next) {
-            html +=
-                '<div class="hero"><div class="eyebrow">Continue here · recommended next step</div>' +
-                '<div class="htitle">' + esc(next.title) + "</div>" +
-                (next.section ? '<div class="hbody">Phase: ' + esc(next.section) + "</div>" : "") +
-                '<div class="actions">' + stepAction(next) + (next.section && /validation|gates/i.test(next.section) ? btn("Open Validation", "goto:validation") : "") + "</div></div>";
-        } else {
-            html += '<div class="banner">✓ Every step is checked off. Re-run the validation gates, then open a pull request.</div>';
-        }
 
         // Steps grouped by their phase/section.
         const groups = [];
@@ -648,7 +789,7 @@ function clientMain() {
 
         groups.forEach((g) => {
             const gdone = g.items.filter((x) => x.status === "done").length;
-            const isValidation = /validation|gates/i.test(g.name);
+            const isValidation = g.rank === 5;
             const gLocked = ord.activeRank != null && g.rank != null && g.rank > ord.activeRank;
             html += '<div class="card' + (gLocked ? " locked" : "") + '"><h2>' + (gLocked ? "🔒 " : "") + esc(g.name) + ' <span class="badge ' + (gdone === g.items.length && g.items.length ? "b-green" : "b-gray") + '">' + gdone + "/" + g.items.length + "</span>";
             if (isValidation) html += '<span class="spacer"></span>' + btn("Open Validation →", "goto:validation");
@@ -659,33 +800,33 @@ function clientMain() {
                 html +=
                     '<li' + (locked ? ' class="locked"' : "") + '><span class="dot ' + esc(st.status) + '"></span>' +
                     '<span class="stext">' + esc(st.title) + "</span>" +
-                    '<span class="srhs">' + stepRowAction(st, isValidation, locked, ord) + "</span></li>";
+                    '<span class="srhs">' + stepRowAction(st, isValidation, locked, ord) +
+                    (!locked && !isValidation && st.status !== "done" ? mappedExecution(st, s) : "") + "</span></li>";
             });
             html += "</ul></div>";
         });
 
-        return html;
+        return html + skillsAccess();
     }
 
-    function approachGuide(ord) {
-        const order = ["Assessment", "P0 Build", "P1 Security", "P2 Runtime", "P3 Observability", "Validate"];
-        const activeIdx = ord && ord.activeRank != null ? ord.activeRank : -1;
-        const flow = order
-            .map((name, i) => '<span class="fstep' + (i === activeIdx ? " on" : i < activeIdx ? " past" : "") + '">' + esc(name) + "</span>")
-            .join('<span class="farrow">›</span>');
-        let body = "Work top-down and finish each phase before the next — e.g. don't upgrade the Java runtime (P2) while the build is still broken (P0). Steps in later phases are marked 🔒 until the current phase is done; <b>Continue here</b> always points to the safe next step.";
-        if (ord && ord.activePhase) body += " You're in <b>" + esc(ord.activePhase) + "</b>.";
-        return '<div class="card guide"><h2>Recommended approach</h2><div class="flow">' + flow + "</div><p class=\"muted\" style=\"margin:10px 0 0\">" + body + "</p></div>";
+    function skillsAccess() {
+        return '<details class="skills-access"><summary>Repository skills</summary>' +
+            '<p>Open <code>.github/skills/&lt;skill-name&gt;/SKILL.md</code> in the repository to create or edit skills.</p></details>';
     }
+
     function shortPhase(name) {
         if (!name) return "the current phase";
         const m = String(name).match(/\bP[0-3]\b/i);
         return m ? m[0].toUpperCase() : name;
     }
 
-    function stepAction(st) {
-        const label = st.status === "in_progress" ? "Resume this step" : "Work on this step";
-        return btn(label, "work_step", { title: st.title, section: st.section }, { primary: true });
+    function mappedExecution(st, s) {
+        if (s.planApprovalStatus !== "approved" || !st.id || !s.report?.findings?.some((finding) =>
+            finding.planSteps?.some((step) => step.id === st.id && step.status !== "done"))) return "";
+        const task = (s.tasks || []).find((item) => item.id === st.taskId);
+        if (task) return btn("Run predefined task", "run_task", { taskId: task.id });
+        const skill = (s.skills || []).find((item) => item.folder === st.skillFolder);
+        return skill ? btn("Run skill", "run_skill", { folder: skill.folder }) : "";
     }
     function stepRowAction(st, isValidation, locked, ord) {
         if (st.status === "done") return '<span class="smuted">✓ Done</span>';
@@ -736,7 +877,9 @@ function clientMain() {
             "One or more required tools are missing. Fix these before building the project or running tasks.";
 
         const notAssessed = d.groups.some((g) => g.checks.some((c) => c.id === "assessed" && c.status !== "ok"));
-        let heroActions = btn("Re-check environment", "recheck_env", {}, { primary: true });
+        let heroActions = d.overall === "blocked"
+            ? btn("Re-check environment", "recheck_env", {}, { primary: true })
+            : btn("Continue", "goto:assessment", {}, { primary: true }) + btn("Re-check environment", "recheck_env");
         if (notAssessed) heroActions += btn("Run assessment", "start_assessment", {});
 
         let html =
@@ -760,7 +903,7 @@ function clientMain() {
             html += "</ul></div>";
         });
 
-        html += '<p class="muted" style="margin:2px 2px 0">Probed locally on your machine — version numbers only. Nothing was installed or modified.</p>';
+        html += '<p class="muted" style="margin:2px 2px 0">The readiness check only reads version numbers. Setup actions require your approval.</p>';
         return html;
     }
 
@@ -776,58 +919,6 @@ function clientMain() {
         return btn(c.action.label || "Fix", c.action.kind, c.action.payload || {}, opts);
     }
 
-    function tasksTab(s) {
-        let html = "";
-        // Custom skills
-        html += '<div class="card"><h2>Custom skills <span class="muted" style="font-weight:400">.github/skills</span></h2>';
-        if (!s.skills || !s.skills.length) {
-            html += '<p class="muted" style="margin:0 0 10px">No custom skills found. Capture an org-specific migration as a reusable skill.</p>' +
-                '<div class="actions">' + btn("Create a custom skill", "create_skill") + "</div>";
-        } else {
-            s.skills.forEach((sk) => {
-                html +=
-                    '<div class="task"><div class="body"><div class="name">' + esc(sk.name) + "</div>" +
-                    '<div class="sum">' + esc(sk.description || sk.folder) + "</div></div>" +
-                    '<div>' + btn("Run", "run_skill", { folder: sk.folder }, { primary: true }) + "</div></div>";
-            });
-        }
-        html += "</div>";
-
-        // Predefined catalog grouped by category, relevant first
-        const tasks = (s.tasks || []).slice().sort((a, b) => (b.relevant ? 1 : 0) - (a.relevant ? 1 : 0));
-        const cats = {};
-        tasks.forEach((t) => {
-            (cats[t.category] = cats[t.category] || []).push(t);
-        });
-        html += '<div class="card"><h2>Microsoft predefined tasks</h2>';
-        Object.keys(cats).forEach((cat) => {
-            html += '<div class="cat">' + esc(cat) + "</div>";
-            cats[cat].forEach((t) => (html += taskRow(t)));
-        });
-        html += "</div>";
-        return html;
-    }
-
-    function summaryTab(s) {
-        let html = "";
-        if (s.summary && s.summary.exists && s.summary.markdown) {
-            html += '<div class="card"><h2>summary.md</h2><div class="md">' + miniMd(s.summary.markdown) + "</div></div>";
-        } else {
-            html += emptyState("No summary yet", "App Modernization writes <code>summary.md</code> after validations pass.", "");
-        }
-        const g = s.git || {};
-        html +=
-            '<div class="card"><h2>Branch & PR</h2><div class="grid">' +
-            kv("Branch", g.branch ? esc(g.branch) : "—") +
-            kv("Migration branch", g.isMigrationBranch ? "Yes" : "No") +
-            kv("Changed files", g.changedFiles != null ? String(g.changedFiles) : "—") +
-            "</div><div class=actions style='margin-top:12px'>" +
-            btn("Open a pull request", "open_pr", {}, { primary: true }) +
-            btn("Refresh", "refresh") +
-            "</div></div>";
-        return html;
-    }
-
     // ---- helpers -------------------------------------------------------------
 
     function nextTarget(v) {
@@ -837,14 +928,6 @@ function clientMain() {
     }
     function kv(k, v) {
         return '<div class="kv"><span class="k">' + esc(k) + '</span><span class="v">' + v + "</span></div>";
-    }
-    function taskRow(t) {
-        return (
-            '<div class="task"><div class="body"><div class="name">' + esc(t.name) +
-            (t.relevant ? ' <span class="badge b-blue">relevant</span>' : "") +
-            '</div><div class="sum">' + esc(t.summary) + "</div></div>" +
-            "<div>" + btn("Run", "run_task", { taskId: t.id }) + "</div></div>"
-        );
     }
     function emptyState(big, sub, action) {
         return '<div class="card"><div class="empty"><div class="big">' + esc(big) + "</div><div>" + sub + "</div>" + (action ? '<div class="actions" style="justify-content:center;margin-top:14px">' + action + "</div>" : "") + "</div></div>";
@@ -881,14 +964,15 @@ function clientMain() {
             renderHeader();
             return;
         }
-        renderHeader();
         autopilotRunning = !!(state.autopilot && state.autopilot.running);
-        const tabs = { overview: overviewTab, readiness: doctorTab, assessment: assessmentTab, plan: planTab, validation: validationTab, tasks: tasksTab, summary: summaryTab };
+        renderHeader();
+        const tabs = { readiness: doctorTab, assessment: assessmentTab, plan: planTab, validation: validationTab };
         let body = "";
         try {
-            body = autopilotStrip(state);
-            body += pending ? '<div class="banner"><span class="spin"></span> Sent to the agent: <b>' + esc(pending) + "</b>. Watch the chat; this view refreshes when the turn finishes.</div>" : "";
-            body += (tabs[activeTab] || overviewTab)(state);
+            body = workflowStatus(state);
+            body += autopilotStrip(state);
+            body += pending ? '<div class="banner"><span class="spin"></span> Agent working on <b>' + esc(pending) + "</b>. Waiting for updated artifacts when the turn finishes.</div>" : "";
+            body += (tabs[activeTab] || assessmentTab)(state);
         } catch (e) {
             // A tab renderer threw — show the error instead of silently leaving the
             // previous tab's content on screen (which looks like a dead click).
@@ -899,24 +983,22 @@ function clientMain() {
 
     function renderHeader() {
         const s = state || {};
-        const a = s.assessment || {};
         $("#status").innerHTML = s.status ? statusBadge(s.status) : "";
         $("#repo").textContent = s.repoPath ? s.repoPath.split(/[\\/]/).slice(-2).join("/") : "";
-        const chips = $("#chips");
-        if (!s.ok) { chips.innerHTML = ""; }
-        else {
-            chips.innerHTML = [
-                a.buildTool ? '<span class="chip"><b>' + esc(a.buildTool) + "</b></span>" : "",
-                a.javaVersion ? '<span class="chip">Java <b>' + esc(a.javaVersion) + "</b></span>" : "",
-                a.springBoot ? '<span class="chip">Spring Boot</span>' : "",
-                a.hasDockerfile ? '<span class="chip">Docker</span>' : "",
-                s.git && s.git.branch ? '<span class="chip">⎇ <b>' + esc(s.git.branch) + "</b></span>" : "",
-            ].join("");
-        }
+        const steps = s.progress?.steps?.length ? s.progress.steps : (s.plan?.steps || []);
+        const canRun = s.planApprovalStatus === "approved" && s.doctor?.overall !== "blocked" && steps.some((step) => step.status !== "done");
+        $("#controls").innerHTML = s.ok ?
+            (s.git?.branch ? '<span class="branch repo muted" title="' + esc(s.git.branch) + '">' + esc(s.git.branch) + '</span>' : "") +
+            btn(s.doctor?.overall === "blocked" ? "Readiness: blocked" : "Readiness", "goto:readiness") +
+            (s.autopilot?.running ? btn("Stop", "autopilot_stop") : "") +
+            '<details class="utility-menu"><summary title="More actions" aria-label="More actions">⋯</summary><div class="utility-popover">' +
+            btn("Refresh", "refresh") +
+            (!s.autopilot?.running && canRun ? btn("Run this phase", "autopilot_start", { scope: "phase" }) +
+                btn("Run all phases", "autopilot_start", { scope: "all" }) : "") +
+            '</div></details>' : "";
         const counts = {
             assessment: s.report && s.report.findings ? s.report.findings.length : 0,
             plan: s.progress && s.progress.steps.length ? s.progress.steps.length : (s.plan ? s.plan.steps.length : 0),
-            tasks: (s.tasks ? s.tasks.length : 0) + (s.skills ? s.skills.length : 0),
         };
         document.querySelectorAll("nav.tabs button").forEach((b) => {
             b.classList.toggle("active", b.dataset.tab === activeTab);
@@ -932,19 +1014,88 @@ function clientMain() {
         });
     }
 
-    async function loadState() {
+    async function loadState(recheckEnv = false) {
         try {
-            const r = await fetch("/state" + tokenQuery);
-            state = await r.json();
+            const query = tokenQuery + (recheckEnv ? (tokenQuery ? "&" : "?") + "recheckEnv=1" : "");
+            const r = await fetch("/state" + query);
+            const next = await r.json();
+            routeFirstSnapshot(next);
+            state = next;
             render();
         } catch (e) {
             toast("Failed to load state");
         }
     }
 
+    function applyStepLinks(markdown) {
+        const choices = new Map(Array.from(document.querySelectorAll("select[data-step-link]"), (select) =>
+            [select.dataset.stepLink, { value: select.value, original: select.dataset.original || "" }]));
+        return markdown.replace(/^[^\r\n]*<!--\s*appmod-step:([a-f0-9]{16,32})\s*-->[^\r\n]*$/gim, (line, id) => {
+            const choice = choices.get(id);
+            if (!choice || choice.value === choice.original) return line;
+            const bare = line.replace(/\s*<!--\s*appmod-(?:task|skill):[^\s<>]+\s*-->/gi, "").trimEnd();
+            if (choice.value.startsWith("task:")) return bare + " <!-- appmod-task:" + choice.value.slice(5) + " -->";
+            if (choice.value.startsWith("skill:")) return bare + " <!-- appmod-skill:" + choice.value.slice(6) + " -->";
+            return bare;
+        });
+    }
+
     async function doAction(kind, payload) {
-        if (kind === "refresh") { toast("Refreshing…"); await loadState(); return; }
-        if (kind.indexOf("goto:") === 0) { activeTab = kind.slice(5); render(); window.scrollTo(0, 0); return; }
+        if (kind === "refresh") toast("Refreshing…");
+        if (kind.indexOf("goto:") === 0) { activeTab = legacyTabs[kind.slice(5)] || kind.slice(5); render(); window.scrollTo(0, 0); return; }
+        if (kind === "confirm_recommendations" || kind === "cancel_recommendations") {
+            batchConfirm = kind === "confirm_recommendations";
+            render();
+            return;
+        }
+        if (kind === "filter_severity") {
+            severityFilter = ["P0", "P1", "P2", "P3", "mandatory", "potential", "optional", "information"].includes(payload.severity) ? payload.severity : "all";
+            render();
+            return;
+        }
+        if (kind === "edit_plan") {
+            planDraft = state.plan.editableMarkdown;
+            planBaseRevision = state.plan.revision;
+            planBaseAdopting = state.planConfigStatus !== "current" && state.plan.adoptable === true;
+            planBaseReportRevision = state.reportRevision;
+            planBaseProgressRevision = state.progress?.revision ?? null;
+            planBaseAssessmentId = state.assessmentConfig?.id ?? null;
+            planEditing = true;
+            render();
+            return;
+        }
+        if (kind === "cancel_plan") {
+            planEditing = false;
+            planDraft = null;
+            planBaseRevision = null;
+            planBaseAdopting = false;
+            render();
+            return;
+        }
+        if (kind === "save_plan") {
+            const editor = $("#plan-editor");
+            if (!editor) { toast("Plan editor unavailable"); return; }
+            payload = { revision: planBaseRevision, markdown: applyStepLinks(editor.value) };
+            if (planBaseAdopting) {
+                if (!$("#confirm-adopt-plan")?.checked) { toast("Review and confirm the assessment link first"); return; }
+                payload = { ...payload, adopt: true, assessmentId: planBaseAssessmentId,
+                    reportRevision: planBaseReportRevision, progressRevision: planBaseProgressRevision };
+            }
+        }
+        if (kind === "approve_plan") payload = { revision: state.plan.revision };
+        if (kind === "start_assessment") {
+            activeTab = "assessment";
+            render();
+            window.scrollTo(0, 0);
+            return;
+        }
+        if (kind === "submit_assessment") {
+            const module = $("#assessment-module");
+            const java = $("#assessment-java");
+            if (!module || !java) { toast("Assessment settings unavailable"); return; }
+            payload = { module: module.value || state.assessmentConfig?.module || ".", targetJava: Number(java.value || state.assessmentConfig?.targetJava || 21), cloud: "Azure" };
+            kind = "start_assessment";
+        }
         // Autopilot controls stream their results over SSE, so they must not set the
         // blocking "pending" banner that freezes the whole view for a one-shot send.
         const isAutopilot = kind.indexOf("autopilot_") === 0;
@@ -956,6 +1107,13 @@ function clientMain() {
             });
             const res = await r.json();
             if (res.ok) {
+                if (kind === "autopilot_start") batchConfirm = false;
+                if (kind === "save_plan") {
+                    planEditing = false;
+                    planDraft = null;
+                    planBaseRevision = null;
+                    planBaseAdopting = false;
+                }
                 if (res.state) {
                     // Local, synchronous actions (refresh, recheck_env) hand back a
                     // fresh snapshot inline. Apply it now and clear any spinner instead
@@ -987,18 +1145,24 @@ function clientMain() {
             doAction(b.dataset.kind, payload);
         }
     });
+    document.addEventListener("input", (e) => {
+        if (e.target && e.target.id === "plan-editor") planDraft = e.target.value;
+    });
 
     // live updates: server pushes a fresh snapshot when the agent finishes a turn
     try {
         const ev = new EventSource("/events" + tokenQuery);
-        // Resync whenever the stream (re)connects. If the provider restarted while an
-        // action was in flight, its "done" broadcast was lost; re-fetching state here
-        // clears any stuck spinner and shows the real result.
-        ev.onopen = () => { loadState(); };
+        // The initial load already fetches state. After a reconnect, re-fetch to
+        // recover a broadcast missed while the stream was disconnected.
+        let connected = false;
+        ev.onopen = () => {
+            if (connected) loadState(true);
+            connected = true;
+        };
         ev.onmessage = (m) => {
             try {
                 const data = JSON.parse(m.data);
-                if (data && data.type === "state") { state = data.state; pending = null; render(); }
+                if (data && data.type === "state") { routeFirstSnapshot(data.state); state = data.state; pending = null; render(); }
                 else if (data && data.type === "autopilot" && state) { state.autopilot = data.autopilot; render(); }
             } catch {}
         };
@@ -1011,25 +1175,19 @@ function clientMain() {
 export function renderHtml({ instanceId, initialTab, token } = {}) {
     // Escape `<` so a stray "</script>" in any field can't break out of the inline
     // <script> tag below. (instanceId is runtime-validated, but stay robust anyway.)
-    const boot = JSON.stringify({ instanceId: instanceId || "", initialTab: initialTab || "overview", token: token || "" }).replace(/</g, "\\u003c");
+    const boot = JSON.stringify({ instanceId: instanceId || "", initialTab: initialTab || "assessment", token: token || "" }).replace(/</g, "\\u003c");
     return (
         "<!doctype html><html><head><meta charset=\"utf-8\" />" +
         "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />" +
         "<title>Java Modernization Studio</title><style>" + CSS + "</style></head><body>" +
         '<header class="top"><div class="title-row">' +
         "<h1>Java Modernization Studio</h1><span id=\"status\"></span><span class=\"spacer\"></span>" +
-        '<span id="repo" class="repo muted"></span>' +
-        '<button class="btn" data-kind="refresh" data-payload="{}">↻ Refresh</button>' +
+        '<span id="repo" class="repo muted"></span><span id="controls" class="global-controls"></span>' +
         "</div>" +
-        '<div id="chips" class="chips"></div>' +
         '<nav class="tabs">' +
-        '<button data-tab="overview">Overview</button>' +
-        '<button data-tab="readiness">Readiness <span class="count"></span></button>' +
-        '<button data-tab="assessment">Assessment <span class="count"></span></button>' +
-        '<button data-tab="plan">Plan &amp; Progress <span class="count"></span></button>' +
-        '<button data-tab="validation">Validation</button>' +
-        '<button data-tab="tasks">Tasks &amp; Skills <span class="count"></span></button>' +
-        '<button data-tab="summary">Summary</button>' +
+        '<button data-tab="assessment">Assess <span class="count"></span></button>' +
+        '<button data-tab="plan">Plan <span class="count"></span></button>' +
+        '<button data-tab="validation">Validate</button>' +
         "</nav></header>" +
         '<main id="app"></main><div id="toast" class="toast"></div>' +
         "<script>window.__APPMOD__=" + boot + ";(" + clientMain.toString() + ")();</script>" +
