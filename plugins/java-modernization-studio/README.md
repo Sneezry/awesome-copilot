@@ -4,9 +4,9 @@ Drive the GitHub Copilot App Modernization for Java workflow from an interactive
 
 ## Installation
 
-``bash
+```bash
 copilot plugin install java-modernization-studio@awesome-copilot
-``
+```
 
 ## Source
 

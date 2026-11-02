@@ -2,6 +2,8 @@
 // Pure (no I/O, no session) so it can be unit-tested in isolation.
 
 import { PREDEFINED_TASKS } from "./catalog.mjs";
+import { join } from "node:path";
+import { cliConfigPath, cliOutputDir, cliReportPath, CLI_AZURE_TARGETS, CLI_DOMAINS, CLI_TARGET_OS } from "./assessment-cli.mjs";
 
 export const APPMOD_PREAMBLE =
     "You are running the GitHub Copilot App Modernization for Java workflow. " +
@@ -20,6 +22,29 @@ const FINDING_STEP_MARKERS =
     "When a step uses an existing repository skill under .github/skills/<folder>/SKILL.md, add " +
     "<!-- appmod-skill:<encoded folder> --> to that item in both files, encoding the exact folder with encodeURIComponent. " +
     "Only link relevant tasks or existing skills, and keep these markers when renaming steps. ";
+
+function assessmentCliInstructions(config, repoPath) {
+    const id = config.id || "<request-id>";
+    const yaml = join(repoPath, cliConfigPath(id));
+    const output = join(repoPath, cliOutputDir(id));
+    const report = join(repoPath, cliReportPath(id));
+    return "\n\nThe cockpit has generated Modernize CLI assessment settings at \"" + yaml + "\". " +
+        "Do not replace them with a flat plugin config, a legacy per-project YAML, or user-level defaults. " +
+        "Make a temporary clean copy of the current project (preserve current source and build files; exclude old .curato and Modernize reports, .appmod output, and build outputs). " +
+        "If a safe copy is not possible, stop and explain why. " +
+        "Run `modernize assess --source \"<absolute path to module " + (config.module || ".") + " in that copy>\" " +
+        "--assess-config \"" + yaml + "\" --output-path \"" + output + "\" --delegate local`. " +
+        "Do not assess a different module or edit the application source. " +
+        "After the CLI completes, find the completed report.json in that output directory for the selected source; " +
+        "copy the raw JSON without modification to \"" + report + "\". " +
+        "Check metadata.status=Complete, analysisStartTime on or after this request, capabilities=[openjdk" +
+        (config.targetJava || 21) + "], domains=[" + CLI_DOMAINS.join(",") + "], targetIds=[" +
+        CLI_AZURE_TARGETS.join(",") + "], os=[" + CLI_TARGET_OS.join(",") +
+        "], mode=issue-only, minimumCveSeverity=high, and an array-valued security field. " +
+        "If the CLI fails, any setting differs, or the native report is missing, report the discrepancy and stop: " +
+        "do not write a linked .appmod/assessment.json or plan/progress, and do not claim the requested target was assessed. " +
+        "CVE matches remain candidates until their resolved versions and applicability are confirmed.\n\n";
+}
 
 export const ACTION_LABELS = {
     start_assessment: "Assessment",
@@ -54,6 +79,7 @@ export function buildPrompt(kind, payload, repoPath) {
                 " on " + (p.cloud || "Azure") + ". Do not silently substitute another target or assess unrelated modules. " +
                 (p.id ? "Use assessment request ID " + p.id + ". Write <!-- appmod-assessment-id:" + p.id +
                     " --> as the second line of plan.md and progress.md. " : "") +
+                assessmentCliInstructions(p, repoPath) +
                 "Report the current Java runtime, build tool, framework versions, outdated/vulnerable dependencies, " +
                 "and cloud-readiness issues for Azure. Summarize findings and write a prioritized plan.md with a matching progress.md checklist of remediation steps. " +
                 FINDING_STEP_MARKERS + "Do not change code yet." +

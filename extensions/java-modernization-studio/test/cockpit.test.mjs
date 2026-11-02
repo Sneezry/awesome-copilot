@@ -7,7 +7,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile, readFile, mkdir, rm } from "node:fs/promises";
+import { mkdtemp, writeFile, readFile, readdir, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -16,7 +16,12 @@ import { EventEmitter } from "node:events";
 import { parseChecklist, scanRepo } from "../scan.mjs";
 import { PREDEFINED_TASKS, catalogWithRelevance, VALIDATION_GATES } from "../catalog.mjs";
 import { buildPrompt, ACTION_LABELS } from "../prompts.mjs";
+import {
+    buildCliConfig, cliConfigPath, cliOutputDir, cliReportPath, CLI_AZURE_TARGETS,
+    CLI_CONTRACT_VERSION, CLI_DOMAINS, CLI_TARGET_OS, verifyCliReport,
+} from "../assessment-cli.mjs";
 import { renderHtml } from "../renderer.mjs";
+import { handleModernizationPrompt, isJavaModernizationRequest, openModernizationCanvas } from "../intent.mjs";
 import {
     buildDoctorReport,
     parseToolVersion,
@@ -52,6 +57,19 @@ import {
 // running the modernization workflow, so root plan/progress/summary are trusted as
 // workflow state (vs. unrelated files that merely share those names).
 const PROV = { ".appmod/assessment.json": "{}" };
+
+function nativeCliReport(config) {
+    return {
+        version: "1.0.0",
+        metadata: {
+            status: "Complete", analysisStartTime: "2026-10-30T06:00:01Z",
+            capabilities: ["openjdk" + config.targetJava],
+            domains: [...CLI_DOMAINS], targetIds: [...CLI_AZURE_TARGETS], os: [...CLI_TARGET_OS],
+            mode: "issue-only", minimumCveSeverity: "high",
+        },
+        projects: [{ path: ".", incidents: [] }], rules: {}, security: [],
+    };
+}
 
 async function makeRepo(files = {}) {
     const dir = await mkdtemp(join(tmpdir(), "appmod-test-"));
@@ -120,6 +138,187 @@ async function invokeGet(handler, path) {
     await handler(req, res);
     return { req, res };
 }
+
+// ===========================================================================
+// intent.mjs
+// ===========================================================================
+
+test("intent: natural Java modernization requests open the canvas, not unrelated questions", () => {
+    for (const prompt of [
+        "Modernize my Java application.",
+        "Upgrade our Java service to Java 21.",
+        "How can I migrate this Java project?",
+        "帮我现代化这个 Java 应用",
+    ]) assert.equal(isJavaModernizationRequest(prompt), true, prompt);
+    for (const prompt of [
+        "What is Java application modernization?",
+        "Explain Java modernization for a project.",
+        "什么是 Java 应用现代化？",
+        "Modernize my JavaScript application.",
+        "Check the Java build for errors.",
+        "Modernize this Python service.",
+        "",
+    ]) assert.equal(isJavaModernizationRequest(prompt), false, prompt);
+});
+
+test("intent: routes to the active Java repo with a stable panel and Readiness first", async () => {
+    await withRepo({ "pom.xml": "<project/>" }, async (first) => {
+        await withRepo({ "build.gradle": "plugins { id 'java' }" }, async (second) => {
+            const opens = [];
+            const open = async (input) => { opens.push(input); };
+            const request = "Modernize my Java application";
+            const a = await openModernizationCanvas(request, first, open);
+            const repeated = await openModernizationCanvas(request, first, open);
+            const b = await openModernizationCanvas(request, second, open);
+            assert.equal(a.opened, true);
+            assert.equal(a.instanceId, repeated.instanceId);
+            assert.notEqual(a.instanceId, b.instanceId);
+            assert.deepEqual(opens.map((entry) => entry.input.repoPath), [first, first, second]);
+            assert.ok(opens.every((entry) => entry.canvasId === "appmod-cockpit" && entry.input.initialTab === "readiness"));
+        });
+    });
+});
+
+test("intent: missing, unrelated and explicitly different repositories are never guessed", async () => {
+    await withRepo({ "pom.xml": "<project/>" }, async (javaRepo) => {
+        await withRepo({ "README.md": "# Another project" }, async (otherRepo) => {
+            let opens = 0;
+            const open = async () => { opens++; };
+            assert.equal(await openModernizationCanvas("What is Java application modernization?", javaRepo, open), null);
+            assert.equal((await openModernizationCanvas("Modernize my Java application", null, open)).opened, false);
+            assert.equal((await openModernizationCanvas("Modernize my Java application", otherRepo, open)).opened, false);
+            assert.equal((await openModernizationCanvas("Modernize my Java application in repo another", javaRepo, open)).opened, false);
+            assert.equal((await openModernizationCanvas("Modernize my Java application in C:\\other\\repo", javaRepo, open)).opened, false);
+            assert.equal((await openModernizationCanvas("Modernize my Java application at /other/repo", javaRepo, open)).opened, false);
+            assert.equal(opens, 0);
+        });
+    });
+});
+
+test("intent: a Java source tree with an unknown build opens guided Readiness", async () => {
+    await withRepo({ "src/main/java/App.java": "class App {}" }, async (dir) => {
+        const opened = [];
+        const result = await openModernizationCanvas("帮我升级这个 Java 项目", dir, async (input) => opened.push(input));
+        assert.equal(result.opened, true);
+        assert.equal(opened[0].input.repoPath, dir);
+    });
+});
+
+test("intent: canvas opening errors are not mistaken for success", async () => {
+    await withRepo({ "pom.xml": "<project/>" }, async (dir) => {
+        await assert.rejects(
+            openModernizationCanvas("Modernize my Java application", dir, async () => { throw new Error("Canvas unavailable"); }),
+            /Canvas unavailable/
+        );
+    });
+});
+
+test("intent: prompt hook opens the current Java repo and supplies hidden workflow guidance", async () => {
+    await withRepo({ "pom.xml": "<project/>" }, async (dir) => {
+        const opened = [];
+        const session = {
+            capabilities: { ui: { canvases: true } },
+            rpc: {
+                metadata: { snapshot: async () => ({ workingDirectory: dir }) },
+                canvas: { open: async (request) => { opened.push(request); } },
+            },
+        };
+        assert.equal(await handleModernizationPrompt({ prompt: "Check the build", workingDirectory: dir }, session), undefined);
+        assert.equal(opened.length, 0);
+        const result = await handleModernizationPrompt({ prompt: "Modernize my Java application" }, session);
+        assert.equal(opened.length, 1);
+        assert.equal(opened[0].input.repoPath, dir);
+        assert.match(result.additionalContext, /open for .*Readiness.*approve the plan/);
+    });
+});
+
+test("intent: canvas-issued assessment prompts do not trigger another canvas or path warning", async () => {
+    const prompt = buildPrompt("start_assessment", {
+        id: "120329ac-0e92-404c-af9e-71790173a881", module: ".", targetJava: 21, cloud: "Azure",
+    }, "C:\\Users\\zlhe\\Source\\Repos\\java-migration-copilot-samples\\asset-manager");
+    let inspected = 0;
+    const session = {
+        capabilities: { ui: { canvases: true } },
+        rpc: {
+            metadata: { snapshot: async () => { inspected++; return { workingDirectory: "C:\\other\\repo" }; } },
+            canvas: { open: async () => { inspected++; } },
+        },
+    };
+    assert.equal(await handleModernizationPrompt({ prompt }, session), undefined);
+    assert.equal(inspected, 0);
+    const hostWrappedPrompt = "<current_datetime>2026-10-30T13:10:40+08:00</current_datetime>\n\n" +
+        prompt + '\n\n<canvas-context>\n- title="Java Modernization Studio" url="http://127.0.0.1:55453/"\n</canvas-context>';
+    assert.equal(await handleModernizationPrompt({ prompt: hostWrappedPrompt }, session), undefined);
+    assert.equal(inspected, 0);
+    const userPrompt = "Modernize my Java application in C:\\other\\repo";
+    assert.match((await handleModernizationPrompt({ prompt: userPrompt, workingDirectory: "C:\\active\\repo" }, session))
+        .additionalContext, /request names a path or URL/);
+});
+
+test("intent: host canvas context cannot turn a restart message into a Java request", async () => {
+    await withRepo({ "pom.xml": "<project/>" }, async (dir) => {
+        const canvasContext = '<canvas-context>\n' +
+            '- title="Java Modernization Studio" url="http://127.0.0.1:55453/" canvas="appmod-cockpit"\n' +
+            '</canvas-context>';
+        const reminder = '<system_reminder>Java Modernization Studio was not opened: verify the Java repository URL.</system_reminder>';
+        const opened = [];
+        const session = {
+            capabilities: { ui: { canvases: true } },
+            rpc: {
+                metadata: { snapshot: async () => ({ workingDirectory: dir }) },
+                canvas: { open: async (request) => { opened.push(request); } },
+            },
+        };
+        const followUp = "<current_datetime>2026-10-30T13:10:40+08:00</current_datetime>\n\n" +
+            "app 已重启\n\n" + canvasContext + "\n" + reminder;
+        assert.equal(isJavaModernizationRequest(followUp), false);
+        assert.equal(await handleModernizationPrompt({ prompt: followUp, workingDirectory: dir }, session), undefined);
+        assert.equal(opened.length, 0);
+
+        const request = "Modernize my Java application\n\n" + canvasContext;
+        assert.equal(isJavaModernizationRequest(request), true);
+        assert.match((await handleModernizationPrompt({ prompt: request, workingDirectory: dir }, session))
+            .additionalContext, /open for .*Readiness/);
+        assert.equal(opened.length, 1);
+        assert.equal(opened[0].input.repoPath, dir);
+        assert.match((await handleModernizationPrompt({
+            prompt: "Modernize my Java application in C:\\other\\repo\n\n" + canvasContext,
+            workingDirectory: dir,
+        }, session)).additionalContext, /request names a path or URL/);
+        assert.equal(opened.length, 1);
+        assert.match((await handleModernizationPrompt({
+            prompt: "Modernize my Java application <canvas-context>C:\\other\\repo</canvas-context>",
+            workingDirectory: dir,
+        }, session)).additionalContext, /request names a path or URL/);
+        assert.equal(opened.length, 1);
+    });
+});
+
+test("intent: prompt hook reports an unsupported host, absent repo or canvas failure", async () => {
+    const prompt = "帮我现代化这个 Java 应用";
+    let opens = 0;
+    const unsupported = await handleModernizationPrompt({ prompt }, {
+        capabilities: { ui: { canvases: false } },
+        rpc: { canvas: { open: async () => { opens++; } } },
+    });
+    assert.match(unsupported.additionalContext, /host cannot display/);
+    const missing = await handleModernizationPrompt({ prompt }, {
+        capabilities: { ui: { canvases: true } },
+        rpc: { metadata: { snapshot: async () => ({ workingDirectory: null }) } },
+    });
+    assert.match(missing.additionalContext, /No active repository path/);
+    await withRepo({ "pom.xml": "<project/>" }, async (dir) => {
+        const logs = [];
+        const failed = await handleModernizationPrompt({ prompt, workingDirectory: dir }, {
+            capabilities: { ui: { canvases: true } },
+            rpc: { canvas: { open: async () => { opens++; throw new Error("Canvas provider unavailable"); } } },
+            log: async (message) => { logs.push(message); },
+        });
+        assert.match(failed.additionalContext, /Canvas provider unavailable/);
+        assert.match(logs[0], /Canvas provider unavailable/);
+    });
+    assert.equal(opens, 1);
+});
 
 // ===========================================================================
 // scan.mjs
@@ -478,6 +677,88 @@ test("scan: assessment artifacts identify current, outdated, and unverified sett
         state = await scanRepo(dir, { includeGit: false });
         assert.equal(state.reportConfigStatus, "unverified");
         assert.equal(state.planConfigStatus, "unverified");
+    });
+});
+
+test("scan: native CLI evidence must match the request before a linked report or plan is current", async () => {
+    const config = { id: "30000000-0000-4000-8000-000000000001", module: ".", targetJava: 21,
+        cloud: "Azure", requestedAt: "2026-10-30T06:00:00Z", cliContractVersion: CLI_CONTRACT_VERSION };
+    const scope = { module: ".", targetJava: 21, cloud: "Azure" };
+    await withRepo({
+        "pom.xml": "<project/>",
+        ".appmod/assessment-config.json": JSON.stringify(config),
+        ".appmod/assessment.json": JSON.stringify({ assessmentId: config.id, assessmentConfig: scope, findings: [] }),
+        ".appmod/plan.md": "<!-- appmod-cockpit -->\n<!-- appmod-assessment-id:" + config.id + " -->\n- [ ] Upgrade",
+    }, async (dir) => {
+        let state = await scanRepo(dir, { includeGit: false });
+        assert.equal(state.reportConfigStatus, "unverified");
+        assert.match(state.reportConfigIssue, /Generated CLI settings are unavailable/);
+        const rec = { repoPath: dir, sseClients: new Set() };
+        assert.equal((await dispatchAction(rec, "approve_plan", { revision: state.plan.revision },
+            { sendPrompt: async () => {} })).ok, false);
+
+        await writeFile(join(dir, cliConfigPath(config.id)), buildCliConfig(config));
+        state = await scanRepo(dir, { includeGit: false });
+        assert.equal(state.reportConfigStatus, "unverified");
+        assert.match(state.reportConfigIssue, /native CLI report for this request is unavailable/);
+
+        const reportPath = join(dir, cliReportPath(config.id));
+        await mkdir(dirname(reportPath), { recursive: true });
+        const native = nativeCliReport(config);
+        await writeFile(reportPath, "{ invalid");
+        state = await scanRepo(dir, { includeGit: false });
+        assert.equal(state.reportConfigStatus, "unverified");
+        assert.match(state.reportConfigIssue, /invalid JSON/);
+
+        await writeFile(reportPath, JSON.stringify({ ...native, metadata: { ...native.metadata, capabilities: ["openjdk25"] } }));
+        state = await scanRepo(dir, { includeGit: false });
+        assert.equal(state.reportConfigStatus, "unverified");
+        assert.match(state.reportConfigIssue, /Java 21/);
+
+        await writeFile(reportPath, JSON.stringify({ ...native, metadata: { ...native.metadata, domains: ["java-upgrade", "cloud-readiness"] } }));
+        state = await scanRepo(dir, { includeGit: false });
+        assert.equal(state.reportConfigStatus, "unverified");
+        assert.match(state.reportConfigIssue, /security/);
+
+        await writeFile(reportPath, JSON.stringify(native));
+        state = await scanRepo(dir, { includeGit: false });
+        assert.equal(state.reportConfigStatus, "current");
+        assert.equal(state.reportConfigIssue, null);
+        assert.equal(state.planApprovalStatus, "missing");
+
+        await writeFile(join(dir, cliConfigPath(config.id)), buildCliConfig({ ...config, targetJava: 17 }));
+        state = await scanRepo(dir, { includeGit: false });
+        assert.equal(state.reportConfigStatus, "unverified");
+        assert.match(state.reportConfigIssue, /settings changed/);
+    });
+});
+
+test("scan: a prior curated report disclosing a mismatched native CLI run is not approvable", async () => {
+    const config = { id: "old-request", module: ".", targetJava: 21, cloud: "Azure" };
+    await withRepo({
+        ".appmod/assessment-config.json": JSON.stringify(config),
+        ".appmod/assessment.json": JSON.stringify({
+            assessmentId: config.id, assessmentConfig: { module: ".", targetJava: 21, cloud: "Azure" },
+            nativeAssessment: { configuredRunCapability: "openjdk25", configuredRunDomains: ["java-upgrade", "cloud-readiness"] },
+            findings: [],
+        }),
+        ".appmod/plan.md": "<!-- appmod-cockpit -->\n<!-- appmod-assessment-id:old-request -->\n- [ ] Upgrade",
+    }, async (dir) => {
+        const state = await scanRepo(dir, { includeGit: false });
+        assert.equal(state.reportConfigStatus, "unverified");
+        assert.match(state.reportConfigIssue, /different Java target/);
+        assert.equal((await dispatchAction({ repoPath: dir, sseClients: new Set() }, "approve_plan",
+            { revision: state.plan.revision }, { sendPrompt: async () => {} })).ok, false);
+    });
+});
+
+test("scan: malformed request-bound CLI IDs cannot resolve paths outside the repository", async () => {
+    const config = { id: "../outside", module: ".", targetJava: 21, cloud: "Azure",
+        requestedAt: "2026-10-30T06:00:00Z", cliContractVersion: CLI_CONTRACT_VERSION };
+    await withRepo({ ".appmod/assessment-config.json": JSON.stringify(config) }, async (dir) => {
+        const state = await scanRepo(dir, { includeGit: false });
+        assert.equal(state.assessmentConfigStatus, "invalid");
+        assert.equal(state.assessmentConfig, null);
     });
 });
 
@@ -1119,6 +1400,36 @@ test("scan: native assessment report is read-only and cannot approve an unrelate
     });
 });
 
+test("scan: newest completed native assessment is found at the assessment report path", async () => {
+    const nativeReport = (status, time, name) => ({
+        version: "1.0.0", producer: "Modernization assessment",
+        metadata: { name, status, analysisEndTime: time },
+        projects: [{ path: "web", incidents: [
+            { ruleId: "java-upgrade", incidentId: "upgrade/1", location: "pom.xml", locationKind: "source-file", line: 12 },
+        ] }],
+        rules: { "java-upgrade": { id: "java-upgrade", title: "Upgrade Java", severity: "mandatory", domain: "java-upgrade" } },
+        security: [{ id: "security-1", title: "Review dependency", severity: "potential",
+            evidence: { files: ["web/pom.xml"], explanation: "Check the declared version" } }],
+    });
+    await withRepo({
+        "pom.xml": "<project/>",
+        ".github/modernize/assessment/report.json":
+            JSON.stringify(nativeReport("Complete", "2026-04-01T00:00:00Z", "Current assessment")),
+        ".github/modernize/reports/report-older/report.json":
+            JSON.stringify(nativeReport("completed", "2026-01-01T00:00:00Z", "Older assessment")),
+    }, async (dir) => {
+        const state = await scanRepo(dir, { includeGit: false });
+        assert.equal(state.reportStatus, "ready");
+        assert.equal(state.reportSource, "native");
+        assert.equal(state.reportPath, ".github/modernize/assessment/report.json");
+        assert.equal(state.report.headline, "Current assessment");
+        assert.equal(state.report.findings.length, 2);
+        assert.equal(state.report.findings[0].severity, "mandatory");
+        assert.equal(state.report.findings[1].severity, "potential");
+        assert.notEqual(state.planApprovalStatus, "approved");
+    });
+});
+
 test("scan: in-progress unified report does not count as a finished assessment", async () => {
     const raw = { version: "1.0.0", producer: "Modernization assessment",
         metadata: { id: "report-one", name: "Java assessment", status: "running", analysisStartTime: "2026-01-01T00:00:00Z", domains: [], targetIds: [] },
@@ -1195,6 +1506,36 @@ test("prompts: run_task known id embeds the task name", () => {
 test("prompts: assessment embeds repo path; generate_plan embeds target", () => {
     assert.match(buildPrompt("start_assessment", {}, "/my/repo"), /\/my\/repo/);
     assert.match(buildPrompt("generate_plan", { targetJava: 21 }, "/r"), /Java 21/);
+});
+
+test("assessment CLI: generated YAML and verified native metadata use the selected target", () => {
+    for (const targetJava of [17, 21]) {
+        const config = { targetJava, cloud: "Azure", requestedAt: "2026-10-30T06:00:00Z" };
+        const yaml = buildCliConfig(config);
+        assert.match(yaml, /^analysisCoverage: issue-only$/m);
+        assert.match(yaml, /^java:\n  assessmentDomains:\n    - java-upgrade\n    - cloud-readiness\n    - security\n  targetRuntime: openjdk(17|21)$/m);
+        assert.match(yaml, /^  targetComputeServices:\n    - azure-aks\n    - azure-appservice\n    - azure-container-apps$/m);
+        assert.match(yaml, /^security:\n  minimumCveSeverity: high\n  cveScanScope: direct$/m);
+        assert.doesNotMatch(yaml, /^targetRuntime:|^targetComputeService:/m);
+        const native = nativeCliReport(config);
+        assert.deepEqual(verifyCliReport(native, config), { ok: true });
+        const older = { ...native, metadata: { ...native.metadata, analysisStartTime: "2026-10-29T06:00:01Z" } };
+        assert.match(verifyCliReport(older, config).error, /predates/);
+        assert.match(verifyCliReport({ ...native, security: undefined }, config).error, /security/);
+        assert.match(verifyCliReport({ ...native, metadata: { ...native.metadata, targetIds: ["azure-appservice"] } }, config).error, /Azure/);
+        assert.match(verifyCliReport({ ...native, metadata: { ...native.metadata, minimumCveSeverity: "low" } }, config).error, /CVE threshold/);
+        assert.match(verifyCliReport({ ...native, metadata: { ...native.metadata, status: "Running" } }, config).error, /not complete/);
+    }
+    assert.throws(() => buildCliConfig({ targetJava: 25, cloud: "Azure" }), /Unsupported/);
+});
+
+test("prompts: assessment names the generated CLI YAML, clean source copy and report checks", () => {
+    const p = buildPrompt("start_assessment", { id: "some-request", module: "web", targetJava: 17, cloud: "Azure" }, "/repo");
+    for (const expected of ["assessment-cli-some-request.yaml", "native-assessment", "--source", "--assess-config",
+        "--output-path", "--delegate local", "clean copy", "metadata.status=Complete", "capabilities=[openjdk17]",
+        "minimumCveSeverity=high", "do not write a linked .appmod/assessment.json"]) {
+        assert.ok(p.includes(expected), expected);
+    }
 });
 
 test("prompts: assessment and plan generation link verified findings to stable mirrored steps", () => {
@@ -1453,6 +1794,23 @@ test("renderer: a blocked first snapshot enters guided Readiness", async () => {
     assert.match((await renderClientTab(sampleState(), "readiness")).app(), /data-kind="goto:assessment"/);
 });
 
+test("renderer: failed tool checks show the reason and disable execution in every tab", async () => {
+    const doctor = {
+        overall: "blocked", error: "Environment check failed", groups: [
+            { id: "buildRun", name: "Build & run", checks: [
+                { id: "probe", label: "Tool checks", status: "fail", detail: "Could not verify required tools: JDK probe unavailable" },
+            ] },
+        ],
+    };
+    const client = await driveClient(sampleState({ doctor, planApprovalStatus: "approved" }), { initialTab: "validation" }).ready();
+    assert.match(client.app(), /Environment check failed/);
+    assert.match(client.app(), /JDK probe unavailable/);
+    assert.match(client.app(), /data-kind="recheck_env"/);
+    await client.clickKind("goto:validation");
+    assert.match(client.app(), /data-kind="run_build_tests"[^>]*disabled/);
+    assert.match(client.app(), /data-kind="run_cve"[^>]*disabled/);
+});
+
 // Execute the serialized client against a realistic state and return the #app
 // HTML for a given tab. Runs the script with `new Function` (global scope, NOT
 // this module's lexical scope) so a stray reference to an undeclared variable
@@ -1523,6 +1881,18 @@ function sampleState(extra = {}) {
         ...extra,
     };
 }
+
+test("renderer: unverified CLI results expose the reason without injecting HTML", async () => {
+    const state = sampleState({
+        assessmentConfig: { id: "request", module: ".", targetJava: 21, cloud: "Azure" },
+        reportStatus: "ready", reportConfigStatus: "unverified",
+        reportConfigIssue: "Native report has <wrong> Java target.",
+    });
+    const html = (await renderClientTab(state, "assessment")).app();
+    assert.match(html, /Native report has &lt;wrong&gt; Java target/);
+    assert.doesNotMatch(html, /Native report has <wrong>/);
+    assert.match(html, /Re-run the assessment before using these findings/);
+});
 
 test("renderer: every tab renders without throwing against a realistic state", async () => {
     const tabs = ["overview", "readiness", "assessment", "plan", "validation", "tasks", "summary"];
@@ -1596,6 +1966,36 @@ test("renderer: report availability is distinct from plan progress in workflow s
     assert.match(missing, /Assessment<\/strong><span>Not started/);
 });
 
+test("renderer: native report without a linked assessment does not recommend a nonexistent plan", async () => {
+    const state = sampleState({
+        status: "not_started", ordering: { activePhase: null },
+        plan: { exists: false, steps: [] }, progress: { exists: false, steps: [] },
+        reportStatus: "ready", reportSource: "native", assessmentConfig: null,
+        reportConfigStatus: null, planConfigStatus: null,
+    });
+    const readiness = (await renderClientTab(state, "readiness")).app();
+    assert.match(readiness, /<strong>Assessment review<\/strong>/);
+    assert.match(readiness, /Report available · settings need review/);
+    assert.match(readiness, /Run an assessment for the selected scope/);
+    assert.match(readiness, /data-kind="goto:assessment"/);
+    assert.doesNotMatch(readiness, /Review findings against the plan/);
+    const plan = (await renderClientTab(state, "plan")).app();
+    assert.match(plan, /Run an assessment for the selected scope before creating a plan/);
+    assert.doesNotMatch(plan, /data-kind="generate_plan"/);
+});
+
+test("renderer: a linked assessment with no plan prioritizes plan generation", async () => {
+    const state = sampleState({
+        plan: { exists: false, steps: [] }, progress: { exists: false, steps: [] },
+        assessmentConfig: { id: "request", module: ".", targetJava: 21, cloud: "Azure" },
+        reportStatus: "ready", reportConfigStatus: "current", planConfigStatus: "missing",
+    });
+    const plan = (await renderClientTab(state, "plan")).app();
+    assert.match(plan, /data-kind="generate_plan"[^>]*>Generate upgrade plan<\/button>/);
+    assert.match(plan, /data-kind="start_assessment"[^>]*>Re-run assessment<\/button>/);
+    assert.doesNotMatch(plan, /Run an assessment for the selected scope before creating a plan/);
+});
+
 test("renderer: Plan tab actually renders its checklist when executed (regression)", async () => {
     const r = await renderClientTab(sampleState(), "plan");
     const out = r.app();
@@ -1604,6 +2004,28 @@ test("renderer: Plan tab actually renders its checklist when executed (regressio
     assert.match(out, /data-kind="work_step"/);
     assert.match(out, /Review plan/);
     assert.ok(!/hit an error/.test(out));
+});
+
+test("renderer: progress bar remains visible after reopening on Assess or Validate", async () => {
+    const steps = Array.from({ length: 18 }, (_, i) => ({
+        title: "Step " + (i + 1), section: "Validation gates", status: i < 15 ? "done" : "pending", rank: 5,
+    }));
+    const state = sampleState({ percent: 83, plan: { exists: true, steps }, progress: { exists: true, steps } });
+    for (const tab of ["assessment", "validation", "readiness"]) {
+        const out = (await renderClientTab(state, tab)).app();
+        assert.match(out, /83% complete · 3 remaining/);
+        assert.match(out, /class="progress workflow-progress" role="progressbar"[^>]*aria-valuenow="83"/);
+        assert.match(out, /<span style="width:83%"><\/span>/);
+    }
+    const plan = (await renderClientTab(state, "plan")).app();
+    assert.match(plan, /Plan &amp; Progress/);
+    assert.match(plan, /<div class="progress"><span style="width:83%"><\/span><\/div>/);
+    assert.doesNotMatch(plan, /class="progress workflow-progress"/);
+
+    const empty = (await renderClientTab(sampleState({
+        plan: { exists: false, steps: [] }, progress: { exists: false, steps: [] }, percent: 0,
+    }), "assessment")).app();
+    assert.doesNotMatch(empty, /role="progressbar"/);
 });
 
 test("renderer: evidence-backed Plan steps retain exact task and skill execution", async () => {
@@ -1972,6 +2394,15 @@ test("server: dispatch refresh re-scans without sending a prompt", async () => {
     });
 });
 
+test("server: refresh and recheck report an unavailable repository as an error", async () => {
+    const rec = { repoPath: null, sseClients: new Set() };
+    for (const kind of ["refresh", "recheck_env"]) {
+        const result = await dispatchAction(rec, kind, {}, {});
+        assert.equal(result.ok, false);
+        assert.match(result.error, /repo path not available/);
+    }
+});
+
 test("server: dispatch agent action forwards crafted prompt to sendPrompt", async () => {
     const rec = { repoPath: "/repo", sseClients: new Set() };
     const sentPrompts = [];
@@ -2028,6 +2459,12 @@ test("server: assessment persists its selected scope and target with a request I
         assert.equal(config.targetJava, 17);
         assert.equal(config.cloud, "Azure");
         assert.ok(config.id);
+        assert.equal(config.cliContractVersion, CLI_CONTRACT_VERSION);
+        assert.equal(await readFile(join(dir, cliConfigPath(config.id)), "utf8"), buildCliConfig(config));
+        assert.match(sent[0], new RegExp(config.id));
+        assert.ok(sent[0].includes(join(dir, cliConfigPath(config.id))));
+        assert.ok(sent[0].includes(join(dir, cliOutputDir(config.id))));
+        assert.ok(sent[0].includes(join(dir, cliReportPath(config.id))));
         assert.match(sent[0], /service/);
         assert.match(sent[0], /Java 17/);
         assert.ok(sent[0].includes(config.id));
@@ -2090,6 +2527,7 @@ test("server: failed assessment send restores the prior settings", async () => {
         });
         assert.equal(result.ok, false);
         assert.equal(await readFile(join(dir, ".appmod", "assessment-config.json"), "utf8"), config);
+        assert.equal((await readdir(join(dir, ".appmod"))).some((entry) => entry.startsWith("assessment-cli-")), false);
     });
 });
 
@@ -2788,6 +3226,34 @@ test("server: execution rechecks a formerly ready toolchain", async () => {
         assert.equal(action.ok, false);
         assert.equal(sent, 0);
         assert.equal(probes, 2, "code-changing actions must check current readiness");
+    });
+});
+
+test("server: failed readiness probe invalidates a cached ready result and stops execution", async () => {
+    await withRepo({ "pom.xml": "<project/>" }, async (dir) => {
+        let fail = true;
+        const rec = {
+            repoPath: dir, sseClients: new Set(),
+            doctor: { overall: "ready", groups: [] },
+            runDoctor: async () => {
+                if (fail) throw new Error("JDK probe unavailable");
+                return { overall: "ready", groups: [] };
+            },
+        };
+        const result = await dispatchAction(rec, "refresh", {}, {});
+        assert.equal(result.ok, true);
+        assert.equal(result.state.doctor.overall, "blocked");
+        assert.equal(result.state.doctor.error, "Environment check failed");
+        assert.match(result.state.doctor.groups[0].checks[0].detail, /JDK probe unavailable/);
+        assert.equal(rec.needsEnvRecheck, true);
+        let sent = false;
+        const deps = { sendPrompt: async () => { sent = true; }, runTurn: async () => { sent = true; } };
+        assert.equal((await dispatchAction(rec, "run_build_tests", {}, deps)).ok, false);
+        assert.equal((await dispatchAction(rec, "autopilot_start", {}, deps)).ok, false);
+        assert.equal(sent, false);
+        fail = false;
+        assert.equal((await refreshAfterTurn(rec)).doctor.overall, "ready");
+        assert.equal(rec.needsEnvRecheck, false);
     });
 });
 

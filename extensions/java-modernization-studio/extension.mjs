@@ -1,4 +1,4 @@
-// extension.mjs — Java Modernization Studio (user-scoped canvas). Wiring only.
+// extension.mjs — Java Modernization Studio canvas. Wiring only.
 //
 // Declares the canvas and bridges the SDK to the testable modules:
 //   scan.mjs      repo + markdown parsing -> grounded state
@@ -12,15 +12,24 @@
 
 import { joinSession, createCanvas, CanvasError } from "@github/copilot-sdk/extension";
 import { basename } from "node:path";
-import { scanRepo } from "./scan.mjs";
-import { createInstanceServer, pushState, refreshAfterTurn, resolveRepoPath } from "./server.mjs";
+import { buildState, createInstanceServer, pushState, refreshAfterTurn, resolveRepoPath } from "./server.mjs";
 import { AUTOPILOT_TURN_TIMEOUT_MS } from "./autopilot.mjs";
+import { handleModernizationPrompt } from "./intent.mjs";
 
 const instances = new Map(); // instanceId -> rec { server, url, repoPath, sseClients }
 let sessionRef = null;
 let lastWorkingDir = null;
 
 const session = await joinSession({
+    hooks: {
+        onSessionStart: (input) => {
+            if (input.workingDirectory) lastWorkingDir = input.workingDirectory;
+        },
+        onUserPromptSubmitted: async (input) => {
+            if (input.workingDirectory) lastWorkingDir = input.workingDirectory;
+            return handleModernizationPrompt(input, sessionRef);
+        },
+    },
     canvases: [
         createCanvas({
             id: "appmod-cockpit",
@@ -42,8 +51,8 @@ const session = await joinSession({
                         "Return the current modernization state snapshot scanned from the repo (assessment, plan/progress, gates, skills, tasks).",
                     handler: async (ctx) => {
                         const rec = instances.get(ctx.instanceId);
-                        const repoPath = rec ? rec.repoPath : resolveRepoPath(ctx, lastWorkingDir);
-                        return await scanRepo(repoPath);
+                        if (!rec) throw new CanvasError("not_open", "Cockpit instance is not open.");
+                        return await buildState(rec);
                     },
                 },
                 {
@@ -52,14 +61,16 @@ const session = await joinSession({
                     handler: async (ctx) => {
                         const rec = instances.get(ctx.instanceId);
                         if (!rec) throw new CanvasError("not_open", "Cockpit instance is not open.");
-                        await pushState(rec, logFn);
-                        return { ok: true, repoPath: rec.repoPath };
+                        const state = await pushState(rec, logFn, { recheckEnv: true });
+                        if (!state?.ok) throw new CanvasError("refresh_failed", state?.error || "Could not refresh the repository state.");
+                        return state;
                     },
                 },
             ],
             open: async (ctx) => {
-                const repoPath = resolveRepoPath(ctx, lastWorkingDir);
-                if (repoPath) lastWorkingDir = repoPath; // never clobber a good target with null
+                const directory = ctx.input?.repoPath ? null : (await sessionRef.rpc.metadata.snapshot()).workingDirectory;
+                const repoPath = resolveRepoPath(ctx, directory || lastWorkingDir);
+                if (directory) lastWorkingDir = directory;
                 const initialTab = ctx.input && ctx.input.initialTab ? ctx.input.initialTab : "assessment";
                 let rec = instances.get(ctx.instanceId);
                 if (!rec) {
@@ -108,8 +119,6 @@ function logFn(message, opts) {
         /* logging is best-effort */
     }
 }
-
-if (session.workspacePath && !lastWorkingDir) lastWorkingDir = session.workspacePath;
 
 // A finished turn may have changed plan.md/progress.md/summary.md or the working
 // tree — re-scan and push fresh state to every open cockpit.

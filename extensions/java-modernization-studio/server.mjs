@@ -12,6 +12,7 @@ import { buildPrompt, ACTION_LABELS } from "./prompts.mjs";
 import { PREDEFINED_TASKS } from "./catalog.mjs";
 import { runDoctor } from "./doctor.mjs";
 import { makeRun, runAutopilot, AUTOPILOT_MAX_STEPS } from "./autopilot.mjs";
+import { buildCliConfig, cliConfigPath, CLI_CONTRACT_VERSION } from "./assessment-cli.mjs";
 
 const EXECUTION_ACTIONS = new Set([
     "run_task", "run_skill", "run_cve", "generate_tests", "run_build_tests",
@@ -193,8 +194,23 @@ export async function buildState(rec, { recheckEnv = false } = {}) {
                 try {
                     rec.doctor = await rec.runDoctor(state);
                     rec.needsEnvRecheck = false;
-                } catch {
-                    rec.doctor = rec.doctor || null;
+                } catch (error) {
+                    rec.doctor = {
+                        overall: "blocked",
+                        generatedAt: new Date().toISOString(),
+                        error: "Environment check failed",
+                        groups: [{
+                            id: "buildRun",
+                            name: "Build & run",
+                            checks: [{
+                                id: "probe",
+                                label: "Tool checks",
+                                status: "fail",
+                                detail: "Could not verify required tools: " + (error instanceof Error ? error.message : String(error)),
+                            }],
+                        }],
+                    };
+                    rec.needsEnvRecheck = true;
                 }
             })();
             rec.doctorPromise = probe;
@@ -339,10 +355,12 @@ export async function startAutopilot(rec, payload, deps) {
 export async function dispatchAction(rec, kind, payload, deps) {
     if (kind === "refresh") {
         const state = await pushState(rec, deps && deps.log, { recheckEnv: true });
+        if (!state?.ok) return { ok: false, error: state?.error || "Could not refresh the repository state." };
         return { ok: true, message: "Refreshed", state };
     }
     if (kind === "recheck_env") {
         const state = await pushState(rec, deps && deps.log, { recheckEnv: true });
+        if (!state?.ok) return { ok: false, error: state?.error || "Could not check the repository environment." };
         return { ok: true, message: "Re-checked environment", state };
     }
     if (kind === "approve_plan") {
@@ -490,7 +508,8 @@ export async function dispatchAction(rec, kind, payload, deps) {
         }
         assessmentRoot = validated.root;
         activeAssessmentRepos.add(assessmentRoot);
-        assessmentConfig = { ...validated.options, id: randomUUID(), requestedAt: new Date().toISOString() };
+        assessmentConfig = { ...validated.options, id: randomUUID(), requestedAt: new Date().toISOString(),
+            cliContractVersion: CLI_CONTRACT_VERSION };
         payload = assessmentConfig;
     }
     if (kind === "generate_plan") {
@@ -549,17 +568,32 @@ export async function dispatchAction(rec, kind, payload, deps) {
     let previousConfig;
     let configPath;
     let configWritten = false;
+    let generatedCliPath;
+    let cliWritten = false;
     try {
         if (assessmentConfig) {
-            const folder = join(rec.repoPath, ".appmod");
+            const folder = join(assessmentRoot, ".appmod");
             configPath = join(folder, "assessment-config.json");
             await mkdir(folder, { recursive: true });
+            if (!insideRepo(assessmentRoot, await realpath(folder))) {
+                throw new Error("Assessment settings must stay inside the repository.");
+            }
+            const existingConfig = await realpath(configPath).catch((error) => {
+                if (error.code === "ENOENT") return null;
+                throw error;
+            });
+            if (existingConfig && !insideRepo(assessmentRoot, existingConfig)) {
+                throw new Error("Assessment settings must stay inside the repository.");
+            }
             previousConfig = await readFile(configPath, "utf8").catch((error) => {
                 if (error.code === "ENOENT") return null;
                 throw error;
             });
-            await writeFile(configPath, JSON.stringify(assessmentConfig, null, 2) + "\n");
+            generatedCliPath = join(assessmentRoot, cliConfigPath(assessmentConfig.id));
+            await writeFile(generatedCliPath, buildCliConfig(assessmentConfig), { flag: "wx" });
+            cliWritten = true;
             configWritten = true;
+            await writeFile(configPath, JSON.stringify(assessmentConfig, null, 2) + "\n");
         }
         await deps.sendPrompt(prompt, DISPLAY_PROMPTS[kind]);
         if (kind === "fix_env") rec.needsEnvRecheck = true;
@@ -568,15 +602,20 @@ export async function dispatchAction(rec, kind, payload, deps) {
         }
         return { ok: true, label, message: "Sent to the agent: " + label };
     } catch (e) {
+        const restoreErrors = [];
         if (configWritten) {
             try {
-                if (previousConfig === null) await rm(configPath);
+                if (previousConfig === null) await rm(configPath, { force: true });
                 else await writeFile(configPath, previousConfig);
             } catch (restoreError) {
-                return { ok: false, error: e.message + "; could not restore assessment settings: " + restoreError.message };
+                restoreErrors.push("could not restore assessment settings: " + restoreError.message);
             }
         }
-        return { ok: false, error: e.message };
+        if (cliWritten) {
+            try { await rm(generatedCliPath); }
+            catch (restoreError) { restoreErrors.push("could not remove generated CLI settings: " + restoreError.message); }
+        }
+        return { ok: false, error: e.message + (restoreErrors.length ? "; " + restoreErrors.join("; ") : "") };
     } finally {
         releaseAssessment();
     }

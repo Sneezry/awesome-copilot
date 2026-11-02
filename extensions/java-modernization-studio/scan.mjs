@@ -8,6 +8,7 @@ import { createHash } from "node:crypto";
 import { isAbsolute, join, posix, relative, sep } from "node:path";
 import { execFile } from "node:child_process";
 import { catalogWithRelevance, VALIDATION_GATES } from "./catalog.mjs";
+import { buildCliConfig, cliConfigPath, cliReportPath, CLI_CONTRACT_VERSION, CLI_DOMAINS, verifyCliReport } from "./assessment-cli.mjs";
 
 // Dependency signatures: substring(s) searched in build files -> catalog `detect` key.
 const DEP_SIGNATURES = {
@@ -35,6 +36,7 @@ const DEP_SIGNATURES = {
 // blob) would waste memory for no parsing benefit. Truncating is safe — every
 // parser here scans for early markers/coordinates.
 const MAX_READ_BYTES = 2 * 1024 * 1024;
+const MAX_CLI_REPORT_BYTES = 32 * 1024 * 1024;
 
 function execGit(args, cwd) {
     return new Promise((resolve) => {
@@ -179,7 +181,8 @@ function normalizeUnifiedReport(raw) {
             evidence: files.length ? files.map((file) => ({ file, detail: explanation })) : (explanation ? [{ detail: explanation }] : []),
         });
     }
-    return { severityScale: "unified", lifecycleStatus: raw.metadata.status,
+    const status = typeof raw.metadata.status === "string" ? raw.metadata.status.trim().toLowerCase() : "";
+    return { severityScale: "unified", lifecycleStatus: status === "complete" ? "completed" : status,
         generatedAt: raw.metadata.analysisEndTime || raw.metadata.analysisStartTime,
         headline: raw.metadata.name, findings };
 }
@@ -202,31 +205,70 @@ function normalizeReport(raw) {
 async function readNativeAssessment(repoPath) {
     const reportsDir = join(repoPath, ".github", "modernize", "reports");
     let root;
-    let entries;
-    try {
-        root = await realpath(repoPath);
-        const directory = await realpath(reportsDir);
-        const rel = relative(root, directory);
-        if (rel === ".." || rel.startsWith(".." + sep) || isAbsolute(rel)) return null;
-        entries = (await readdir(reportsDir, { withFileTypes: true }))
-            .filter((entry) => entry.isDirectory() && entry.name.startsWith("report-"))
-            .sort((left, right) => right.name.localeCompare(left.name)).slice(0, 100);
-    } catch { return null; }
+    try { root = await realpath(repoPath); }
+    catch { return null; }
     const candidates = [];
-    for (const entry of entries) {
-        const path = join(reportsDir, entry.name, "report.json");
+    const consider = async (path) => {
         try {
-            if (!(await lstat(path)).isFile()) continue;
+            if (!(await lstat(path)).isFile()) return;
             const rel = relative(root, await realpath(path));
-            if (rel === ".." || rel.startsWith(".." + sep) || isAbsolute(rel)) continue;
+            if (rel === ".." || rel.startsWith(".." + sep) || isAbsolute(rel)) return;
             const raw = JSON.parse(await readText(path));
             const report = normalizeReport(raw);
-            if (report?.severityScale !== "unified" || report.lifecycleStatus !== "completed") continue;
+            if (report?.severityScale !== "unified" || report.lifecycleStatus !== "completed") return;
             candidates.push({ report, path: rel.split(sep).join("/"), time: Date.parse(report.generatedAt) || 0 });
         } catch {}
-    }
+    };
+
+    await consider(join(repoPath, ".github", "modernize", "assessment", "report.json"));
+    try {
+        const directory = await realpath(reportsDir);
+        const rel = relative(root, directory);
+        if (rel !== ".." && !rel.startsWith(".." + sep) && !isAbsolute(rel)) {
+            const entries = (await readdir(reportsDir, { withFileTypes: true }))
+                .filter((entry) => entry.isDirectory() && entry.name.startsWith("report-"))
+                .sort((left, right) => right.name.localeCompare(left.name)).slice(0, 100);
+            for (const entry of entries) await consider(join(reportsDir, entry.name, "report.json"));
+        }
+    } catch {}
     candidates.sort((left, right) => right.time - left.time || right.path.localeCompare(left.path));
     return candidates[0] || null;
+}
+
+async function readContainedFile(repoPath, path, maxBytes) {
+    const root = await realpath(repoPath);
+    const file = await realpath(join(root, path));
+    const rel = relative(root, file);
+    if (rel === ".." || rel.startsWith(".." + sep) || isAbsolute(rel)) {
+        throw new Error("Assessment evidence must stay inside the repository.");
+    }
+    const info = await stat(file);
+    if (!info.isFile() || info.size > maxBytes) {
+        throw new Error("Assessment evidence is not a file or exceeds the supported size.");
+    }
+    return readFile(file, "utf8");
+}
+
+async function verifyCliEvidence(repoPath, config) {
+    let yaml;
+    try {
+        yaml = await readContainedFile(repoPath, cliConfigPath(config.id), MAX_READ_BYTES);
+    } catch (error) {
+        return { ok: false, error: "Generated CLI settings are unavailable: " + error.message };
+    }
+    if (yaml !== buildCliConfig(config)) {
+        return { ok: false, error: "Generated CLI settings changed since the assessment request. Re-run the assessment." };
+    }
+    let reportText;
+    try {
+        reportText = await readContainedFile(repoPath, cliReportPath(config.id), MAX_CLI_REPORT_BYTES);
+    } catch (error) {
+        return { ok: false, error: "The native CLI report for this request is unavailable: " + error.message };
+    }
+    let report;
+    try { report = JSON.parse(reportText); }
+    catch { return { ok: false, error: "The native CLI report for this request is invalid JSON." }; }
+    return verifyCliReport(report, config);
 }
 
 function stripMd(s) {
@@ -646,7 +688,11 @@ export async function scanRepo(repoPath, opts = {}) {
     if (configRaw != null) {
         try {
             const config = JSON.parse(configRaw);
-            if (config && typeof config.id === "string" && config.id &&
+            const cliContractValid = config?.cliContractVersion === undefined ||
+                config.cliContractVersion === CLI_CONTRACT_VERSION &&
+                /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(config.id) &&
+                Number.isFinite(Date.parse(config.requestedAt));
+            if (config && cliContractValid && typeof config.id === "string" && config.id &&
                 typeof config.module === "string" && config.module &&
                 [17, 21].includes(config.targetJava) && config.cloud === "Azure") {
                 assessmentConfig = config;
@@ -675,6 +721,7 @@ export async function scanRepo(repoPath, opts = {}) {
     const summaryMd = apSummary || (trusted(rootSummary) ? rootSummary : null) ||
         (nativeSummary !== null && hasMarker(nativeSummary) ? nativeSummary : null);
     let reportConfigStatus = null;
+    let reportConfigIssue = null;
     let planConfigStatus = null;
     if (assessmentConfig) {
         if (reportStatus !== "ready") reportConfigStatus = "missing";
@@ -687,6 +734,22 @@ export async function scanRepo(repoPath, opts = {}) {
             else reportConfigStatus = report.assessmentId === assessmentConfig.id &&
                 options.module === assessmentConfig.module && options.targetJava === assessmentConfig.targetJava &&
                 options.cloud === assessmentConfig.cloud ? "current" : "outdated";
+        }
+        if (reportConfigStatus === "current" && report.nativeAssessment) {
+            const native = report.nativeAssessment;
+            if (native.configuredRunCapability && native.configuredRunCapability !== "openjdk" + assessmentConfig.targetJava ||
+                Array.isArray(native.configuredRunDomains) &&
+                !CLI_DOMAINS.every((domain) => native.configuredRunDomains.includes(domain))) {
+                reportConfigStatus = "unverified";
+                reportConfigIssue = "The linked native CLI assessment used a different Java target or omitted required domains.";
+            }
+        }
+        if (assessmentConfig.cliContractVersion === CLI_CONTRACT_VERSION && reportStatus === "ready") {
+            const verified = await verifyCliEvidence(repoPath, assessmentConfig);
+            if (!verified.ok) {
+                if (reportConfigStatus === "current") reportConfigStatus = "unverified";
+                reportConfigIssue = verified.error;
+            }
         }
         const planDocs = [planMd, progressMd].filter(Boolean);
         if (!planDocs.length) planConfigStatus = "missing";
@@ -800,6 +863,7 @@ export async function scanRepo(repoPath, opts = {}) {
         assessmentConfig,
         assessmentConfigStatus,
         reportConfigStatus,
+        reportConfigIssue,
         planConfigStatus,
         planApprovalStatus,
         ordering,

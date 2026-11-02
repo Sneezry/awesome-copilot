@@ -70,6 +70,7 @@ main { padding: 16px 18px 40px; max-width: 980px; }
 .workflow-stage span, .workflow-next span { color: var(--text-color-muted,#656d76); font-size: 12px; }
 .workflow-next { flex: 1 1 320px; }
 .workflow-next .btn { margin-left: auto; }
+.workflow-progress { flex: 0 0 100%; }
 .summary-details { flex: 0 0 100%; font-size: 12.5px; }
 .summary-details summary, .run-log summary { cursor: pointer; font-weight: 600; }
 .summary-details .md { margin-top: 8px; }
@@ -315,8 +316,10 @@ function clientMain() {
         const mutating = ["run_task", "run_skill", "generate_tests", "work_step", "auto_step", "fix_finding", "open_pr", "create_skill", "autopilot_start"].includes(kind);
         const configBlocked = needsReview && (execution || (kind === "generate_plan" && state.reportConfigStatus !== "current"));
         const approvalBlocked = (mutating || kind === "confirm_recommendations") && state && state.planApprovalStatus !== "approved";
-        const dis = pending || frozen || configBlocked || approvalBlocked || (kind === "approve_plan" && planEditing) ? " disabled" : "";
-        const title = configBlocked ? ' title="Review the assessment and plan for the selected settings"' :
+        const readinessBlocked = state?.doctor?.overall === "blocked" && (execution || mutating);
+        const dis = pending || frozen || configBlocked || approvalBlocked || readinessBlocked || (kind === "approve_plan" && planEditing) ? " disabled" : "";
+        const title = readinessBlocked ? ' title="Re-check the environment before execution"' :
+            configBlocked ? ' title="Review the assessment and plan for the selected settings"' :
             approvalBlocked ? ' title="Approve the current plan before making changes"' : "";
         const pressed = typeof opts.pressed === "boolean" ? ' aria-pressed="' + opts.pressed + '"' : "";
         return (
@@ -327,17 +330,20 @@ function clientMain() {
 
     function workflowStatus(s) {
         const blocked = s.doctor?.overall === "blocked";
-        const next = blocked ? { title: "Resolve required environment tools" } : heroNext(s);
+        const next = blocked ? { title: s.doctor.error ? "Retry the environment check" : "Resolve required environment tools" } : heroNext(s);
         const reportReady = !!s.report && s.reportStatus === "ready";
-        const needsAssessment = !reportReady || (s.assessmentConfig && s.reportConfigStatus !== "current");
+        const hasPlan = !!(s.plan?.exists || s.progress?.exists);
+        const unlinkedReport = reportReady && !s.assessmentConfig && (s.reportSource === "native" || !hasPlan);
+        const needsAssessment = !reportReady || unlinkedReport || (s.assessmentConfig && s.reportConfigStatus !== "current");
         const needsPlan = !s.plan?.exists || (s.assessmentConfig && s.planConfigStatus !== "current") || s.planApprovalStatus !== "approved";
         const target = blocked ? "readiness" : next.target;
         const steps = s.progress?.steps?.length ? s.progress.steps : (s.plan?.steps || []);
         const remaining = steps.filter((step) => step.status !== "done").length;
-        const phase = blocked ? "Readiness blocked" : s.status === "completed" ? "Ready to ship" :
+        const percent = Math.max(0, Math.min(100, Number(s.percent) || 0));
+        const phase = blocked ? s.doctor.error ? "Readiness check failed" : "Readiness blocked" : s.status === "completed" ? "Ready to ship" :
             s.ordering?.activePhase || (needsAssessment ? reportReady ? "Assessment review" : "Assessment" :
             needsPlan ? s.plan?.exists ? "Plan review" : "Plan" : remaining ? "Remediation" : "Validation");
-        const progressText = steps.length ? esc(s.percent || 0) + '% complete · ' + remaining + ' remaining' :
+        const progressText = steps.length ? percent + '% complete · ' + remaining + ' remaining' :
             !reportReady || blocked ? "Not started" : needsAssessment ? "Report available · settings need review" : "Report ready · plan not started";
         let html = '<section class="workflow-overview" aria-label="Workflow status"><div class="workflow-stage">' +
             '<strong>' + esc(phase) + '</strong><span>' + progressText +
@@ -346,6 +352,10 @@ function clientMain() {
             (next.eyebrow === "Final step" ? btn("Open pull request", "open_pr", {}, { primary: true }) :
                 activeTab === target ? "" : btn("Open " + (target === "readiness" ? "Readiness" : target === "assessment" ? "Assess" : target === "plan" ? "Plan" : "Validate"), "goto:" + target)) +
             '</div>';
+        if (steps.length && activeTab !== "plan") {
+            html += '<div class="progress workflow-progress" role="progressbar" aria-label="Plan completion" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' +
+                percent + '"><span style="width:' + percent + '%"></span></div>';
+        }
         if (s.summary?.exists && s.summary.markdown) {
             html += '<details class="summary-details"><summary>Summary</summary><div class="md">' + miniMd(s.summary.markdown) + '</div></details>';
         }
@@ -401,7 +411,9 @@ function clientMain() {
         const by = sevCounts(rep.findings, levels);
         if (severityFilter !== "all" && !levels.includes(severityFilter)) severityFilter = "all";
         const stale = s.assessmentConfig && s.reportConfigStatus !== "current";
-        const notice = stale ? '<div class="banner banner-red">This assessment report is outdated or its settings cannot be verified. Re-run the assessment before using these findings. ' + btn("Re-run assessment", "start_assessment") + '</div>' : "";
+        const notice = stale ? '<div class="banner banner-red">This assessment report is outdated or its settings cannot be verified. ' +
+            (s.reportConfigIssue ? esc(s.reportConfigIssue) + " " : "") +
+            'Re-run the assessment before using these findings. ' + btn("Re-run assessment", "start_assessment") + '</div>' : "";
         const nativeNotice = s.reportSource === "native" ? '<div class="banner">Showing the native assessment report from <code>' + esc(s.reportPath) +
             '</code>. Its scope is not linked to this canvas plan; review settings and run an assessment before executing steps.</div>' : "";
         let html = settings + nativeNotice + notice + '<div class="card"><h2>Assessment results';
@@ -495,6 +507,13 @@ function clientMain() {
             return {
                 eyebrow: "Assessment needs attention",
                 title: "Review assessment settings",
+                target: "assessment",
+            };
+        }
+        if (hasReport && !s.assessmentConfig && (s.reportSource === "native" || !hasPlan)) {
+            return {
+                eyebrow: "Assessment needs confirmation",
+                title: "Run an assessment for the selected scope",
                 target: "assessment",
             };
         }
@@ -759,11 +778,15 @@ function clientMain() {
                 (reportReady ? btn("Generate plan", "generate_plan") : btn("Re-run assessment", "start_assessment")) + '</div>';
         }
         if (!steps.length) {
+            const linkedAssessment = s.assessmentConfig && s.reportConfigStatus === "current";
             return notice + emptyState(
                 "No plan yet",
-                "Run an assessment or generate an upgrade plan. App Modernization writes <code>plan.md</code> and a <code>progress.md</code> checklist, and your steps land here — each unchecked one becomes a button that hands that exact step to the agent.",
-                btn("Run assessment", "start_assessment", {}, { primary: true }) +
-                (s.assessmentConfig && s.reportConfigStatus === "current" ? btn("Generate upgrade plan", "generate_plan") : "")
+                (linkedAssessment ? "Generate an upgrade plan from the current assessment." :
+                    "Run an assessment for the selected scope before creating a plan.") +
+                " App Modernization writes <code>plan.md</code> and a <code>progress.md</code> checklist, and your steps land here — each unchecked one becomes a button that hands that exact step to the agent.",
+                linkedAssessment ?
+                    btn("Generate upgrade plan", "generate_plan", {}, { primary: true }) + btn("Re-run assessment", "start_assessment") :
+                    btn("Run assessment", "start_assessment", {}, { primary: true })
             ) + skillsAccess();
         }
         const src = usingProgress ? "progress.md" : "plan.md";
@@ -868,10 +891,12 @@ function clientMain() {
         }
         const tone = d.overall === "ready" ? "b-green" : d.overall === "caution" ? "b-amber" : "b-red";
         const head =
+            d.error ? d.error :
             d.overall === "ready" ? "Your environment is ready" :
             d.overall === "caution" ? "Almost ready — a couple of things to check" :
             "Not ready yet — resolve the blockers below";
         const sub =
+            d.error ? "The required toolchain could not be verified. No changes will run until a successful re-check." :
             d.overall === "ready" ? "All required tools are installed. You're clear to start modernizing." :
             d.overall === "caution" ? "The required tools are present; some optional or recommended items need attention." :
             "One or more required tools are missing. Fix these before building the project or running tasks.";
