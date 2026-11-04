@@ -139,7 +139,11 @@ export function buildPrompt(kind, payload, repoPath) {
         case "run_consistency":
             return "Run a consistency check comparing the modernized code against the original behavior (APIs, SQL, wire format). List any behavioral differences and update progress.md.";
         case "run_completeness":
-            return "Run a completeness check: verify every step in plan.md has been implemented. List anything missing and update progress.md.";
+            return "Run a completeness check against every approved finding and step in plan.md. " +
+                "Record what was checked and each concrete remaining action as indented bullet notes under the Completeness step in progress.md; " +
+                "prefix follow-up bullets with a short bold area label, for example **Database cutover:**. " +
+                "If anything remains, leave that step unchecked and explain what must be resolved next; only check it off with evidence when the approved work is actually complete. " +
+                "A completed check is not the same as a passed gate.";
         case "create_skill":
             return (
                 "Help me create a custom App Modernization skill. Create .github/skills/<skill-name>/SKILL.md with Skill Name, " +

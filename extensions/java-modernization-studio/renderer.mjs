@@ -17,9 +17,7 @@ body {
 a { color: var(--true-color-blue, #0969da); }
 .muted { color: var(--text-color-muted, #656d76); }
 header.top {
-  position: sticky; top: 0; z-index: 5;
   background: var(--background-color-default, #fff);
-  border-bottom: 1px solid var(--border-color-default, #d0d7de);
   padding: 14px 18px 0;
 }
 .title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -52,7 +50,13 @@ h1 {
 .b-red   { color: #fff; background: var(--true-color-red, #cf222e); }
 .b-gray  { color: var(--text-color-default,#1f2328); background: var(--background-color-muted,#eaeef2); border-color: var(--border-color-default,#d0d7de); }
 .b-blue  { color: #fff; background: var(--true-color-blue, #0969da); }
-nav.tabs { display: flex; gap: 2px; margin-top: 6px; flex-wrap: wrap; }
+.shared-status { max-width: 980px; padding: 0 18px; }
+nav.tabs {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; gap: 2px; flex-wrap: wrap; padding: 0 18px;
+  background: var(--background-color-default, #fff);
+  border-bottom: 1px solid var(--border-color-default, #d0d7de);
+}
 nav.tabs button {
   background: none; border: none; border-bottom: 2px solid transparent;
   padding: 8px 12px; font-size: 13px; cursor: pointer; color: var(--text-color-muted,#656d76);
@@ -105,8 +109,8 @@ button.btn:disabled { opacity: .55; cursor: default; }
 .progress { height: 8px; border-radius: 999px; background: var(--background-color-muted,#eaeef2); overflow: hidden; }
 .progress > span { display: block; height: 100%; background: var(--true-color-green,#1a7f37); }
 ul.steps { list-style: none; margin: 0; padding: 0; }
-ul.steps li { display: flex; align-items: flex-start; gap: 9px; padding: 6px 0; border-bottom: 1px solid var(--border-color-muted, #eaeef2); }
-ul.steps li:last-child { border-bottom: none; }
+ul.steps > li { display: flex; align-items: flex-start; gap: 9px; padding: 6px 0; border-bottom: 1px solid var(--border-color-muted, #eaeef2); }
+ul.steps > li:last-child { border-bottom: none; }
 .dot { width: 16px; height: 16px; border-radius: 50%; flex: 0 0 auto; margin-top: 2px; border: 2px solid; }
 .dot.done { background: var(--true-color-green,#1a7f37); border-color: var(--true-color-green,#1a7f37); }
 .dot.in_progress { background: var(--true-color-orange,#9a6700); border-color: var(--true-color-orange,#9a6700); }
@@ -197,12 +201,23 @@ ul.steps li:last-child { border-bottom: none; }
 .legend { display: flex; gap: 16px; margin-top: 11px; font-size: 11.5px; color: var(--text-color-muted,#656d76); }
 .legend > span { display: inline-flex; align-items: center; }
 .legend .dot { width: 12px; height: 12px; margin: 0 5px 0 0; }
-ul.steps li { align-items: center; }
-ul.steps li .stext { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-ul.steps li .srhs { flex: 0 0 auto; margin-left: 10px; }
+ul.steps > li { align-items: center; }
+ul.steps > li .stext { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+ul.steps > li .srhs { flex: 0 0 auto; margin-left: 10px; }
 .smuted { font-size: 11.5px; color: var(--text-color-muted,#656d76); white-space: nowrap; }
-ul.steps li.locked .stext { opacity: .55; }
-ul.steps li.locked .dot { opacity: .5; }
+ul.steps > li.locked .stext { opacity: .55; }
+ul.steps > li.locked .dot { opacity: .5; }
+.step-notes { margin-top: 6px; font-size: 12px; }
+.step-notes summary { cursor: pointer; color: var(--text-color-muted,#656d76); }
+.review-followup { border-left: 4px solid var(--true-color-orange,#9a6700); }
+.review-followup p { font-size: 12.5px; line-height: 1.55; margin: 0 0 8px; }
+.review-followup h3 { font-size: 12.5px; margin: 12px 0 4px; }
+.review-context { font-size: 12px; margin: 12px 0; }
+.review-context summary { cursor: pointer; color: var(--text-color-muted,#656d76); }
+.recorded-notes { padding-left: 20px; margin: 8px 0 12px; font-size: 12.5px; line-height: 1.55; }
+.recorded-notes li { margin-bottom: 8px; overflow-wrap: anywhere; }
+.recorded-notes li:last-child { margin-bottom: 0; }
+.recorded-notes code { font-family: var(--font-mono,monospace); background: var(--background-color-muted,#f6f8fa); padding: 1px 4px; border-radius: 4px; }
 .card.locked { border-style: dashed; }
 .card.locked > h2 { color: var(--text-color-muted,#656d76); }
 .finding.locked { opacity: .72; }
@@ -235,14 +250,15 @@ ul.aplog li { display: block; }
 .apno { color: var(--true-color-red,#cf222e); font-weight: 700; }
 @media (max-width: 600px) {
     header.top { padding: 12px 12px 0; }
+    .shared-status, nav.tabs { padding-left: 12px; padding-right: 12px; }
     main { padding: 12px 12px 32px; }
     .global-controls { flex: 1 1 100%; min-width: 0; flex-wrap: wrap; }
     .global-controls .branch { max-width: min(45vw, 180px); min-width: 0; }
     .utility-menu { margin-left: auto; }
     .workflow-next { flex-basis: 100%; }
     .workflow-next .btn { margin-left: 0; }
-    ul.steps li { flex-wrap: wrap; }
-    ul.steps li .srhs { flex: 1 1 100%; min-width: 0; margin-left: 25px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+    ul.steps > li { flex-wrap: wrap; }
+    ul.steps > li .srhs { flex: 1 1 100%; min-width: 0; margin-left: 25px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 }
 `;
 
@@ -352,7 +368,7 @@ function clientMain() {
             (next.eyebrow === "Final step" ? btn("Open pull request", "open_pr", {}, { primary: true }) :
                 activeTab === target ? "" : btn("Open " + (target === "readiness" ? "Readiness" : target === "assessment" ? "Assess" : target === "plan" ? "Plan" : "Validate"), "goto:" + target)) +
             '</div>';
-        if (steps.length && activeTab !== "plan") {
+        if (steps.length) {
             html += '<div class="progress workflow-progress" role="progressbar" aria-label="Plan completion" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' +
                 percent + '"><span style="width:' + percent + '%"></span></div>';
         }
@@ -573,9 +589,16 @@ function clientMain() {
                 target: "assessment",
             };
         }
+        if (nextCheck?.keys.includes("completeness") && s.gateNotes?.completeness?.length) {
+            return {
+                eyebrow: "Needs follow-up",
+                title: "Resolve work recorded by the completeness check",
+                target: "validation",
+            };
+        }
         return nextCheck ? {
             eyebrow: "Recommended next",
-            title: (nextCheck.keys.some((key) => gates[key] === "failed") ? "Retry: " : "Next: ") + nextCheck.title,
+            title: (nextCheck.keys.some((key) => gates[key] === "failed") ? "Retry " : "") + nextCheck.title,
             target: "validation",
         } : {
             eyebrow: "Validation complete",
@@ -794,10 +817,9 @@ function clientMain() {
         const done = steps.filter((x) => x.status === "done").length;
         const ord = s.ordering || { activeRank: null, activePhase: null };
 
-        // Intro + overall progress + legend.
+        // Plan-specific context and legend; the progress meter lives above the tabs.
         let html = notice + planReview(s) + '<div class="card"><h2>Plan &amp; Progress <span class="muted" style="font-weight:400">' + esc(src) + "</span><span class=\"spacer\"></span>" + statusBadge(s.status) + "</h2>";
-        html += '<div class="progress"><span style="width:' + (s.percent || 0) + '%"></span></div>';
-        html += '<p class="muted" style="margin:6px 0 0">' + done + " of " + total + " steps done · " + (s.percent || 0) + "% complete</p>";
+        html += '<p class="muted" style="margin:6px 0 0">' + done + " of " + total + " steps done</p>";
         html += '<div class="legend"><span><span class="dot done"></span>Done</span><span><span class="dot in_progress"></span>In progress</span><span><span class="dot pending"></span>To do</span><span>🔒 Do later</span></div>';
         html += "</div>";
 
@@ -822,7 +844,10 @@ function clientMain() {
                 const locked = ord.activeRank != null && st.rank != null && st.rank > ord.activeRank;
                 html +=
                     '<li' + (locked ? ' class="locked"' : "") + '><span class="dot ' + esc(st.status) + '"></span>' +
-                    '<span class="stext">' + esc(st.title) + "</span>" +
+                    '<div class="stext">' + esc(st.title) +
+                    (st.status !== "done" && st.notes?.length ?
+                        '<details class="step-notes"><summary>Recorded notes (' + st.notes.length + ')</summary>' +
+                        recordedNotes(st.notes) + "</details>" : "") + "</div>" +
                     '<span class="srhs">' + stepRowAction(st, isValidation, locked, ord) +
                     (!locked && !isValidation && st.status !== "done" ? mappedExecution(st, s) : "") + "</span></li>";
             });
@@ -861,21 +886,48 @@ function clientMain() {
         return btn(label, "work_step", { title: st.title, section: st.section });
     }
 
+    function recordedNotes(notes) {
+        return '<ul class="recorded-notes">' + notes.map((note) => '<li>' +
+            esc(note).replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+                .replace(/`([^`]+)`/g, "<code>$1</code>") + "</li>").join("") + "</ul>";
+    }
+
     function validationTab(s) {
         const gates = s.gates || {};
+        const notes = s.gateNotes?.completeness || [];
+        const needsFollowUp = notes.length && ["pending", "in_progress"].includes(gates.completeness);
         const labels = { build: "Build", tests: "Unit Tests", cve: "CVE Check", consistency: "Consistency", completeness: "Completeness" };
         let html = '<div class="card"><h2>Validation gates</h2><div class="grid">';
         Object.keys(labels).forEach((k) => {
-            html += '<div class="kv"><span class="k">' + esc(labels[k]) + "</span><span class=v>" + statusBadge(gates[k] || "not_run") + "</span></div>";
+            html += '<div class="kv"><span class="k">' + esc(labels[k]) + '</span><span class="v">' +
+                (k === "completeness" && needsFollowUp ? '<span class="badge b-amber">Needs follow-up</span>' :
+                    statusBadge(gates[k] || "not_run")) + "</span></div>";
         });
         html += "</div></div>";
+        if (notes.length && gates.completeness !== "done") {
+            const followUps = notes.filter((note) => /^\*\*[^*]+:\*\*/.test(note));
+            const context = notes.filter((note) => !/^\*\*[^*]+:\*\*/.test(note));
+            html += '<section class="card review-followup" aria-label="Completeness follow-up"><h2>Completeness needs follow-up</h2>' +
+                '<p>The check has notes in <code>progress.md</code>, but its final step is still open. "In progress" describes the plan, not an active check. ' +
+                "Resolve the recorded gaps, then rerun Completeness; only mark the step done when all approved work is verified.</p>";
+            if (followUps.length) {
+                html += '<h3>Recorded follow-up (' + followUps.length + ")</h3>" + recordedNotes(followUps);
+                if (context.length) {
+                    html += '<details class="review-context"><summary>Check context and evidence (' + context.length + ')</summary>' +
+                        recordedNotes(context) + "</details>";
+                }
+            } else {
+                html += recordedNotes(notes);
+            }
+            html += '<div class="actions">' + btn("Open Plan", "goto:plan") + "</div></section>";
+        }
         html +=
             '<div class="card"><h2>Run validations</h2><div class="actions">' +
             btn("Build & unit tests", "run_build_tests", {}, { primary: true }) +
             btn("Scan CVEs", "run_cve") +
             btn("Generate unit tests", "generate_tests") +
             btn("Consistency check", "run_consistency") +
-            btn("Completeness check", "run_completeness") +
+            btn(notes.length && gates.completeness !== "done" ? "Recheck Completeness" : "Completeness check", "run_completeness") +
             "</div><p class=muted style='margin:10px 0 0'>CVE scan uses <code>#appmod-validate-cves-for-java</code>; test generation uses <code>#appmod-generate-tests-for-java</code>.</p></div>";
         return html;
     }
@@ -981,10 +1033,12 @@ function clientMain() {
 
     function render() {
         if (!state) {
+            $("#shared").innerHTML = "";
             $("#app").innerHTML = '<div class="empty"><span class="spin"></span> Loading…</div>';
             return;
         }
         if (!state.ok) {
+            $("#shared").innerHTML = "";
             $("#app").innerHTML = emptyState("Repo not available", esc(state.error || "Could not read the repository."), btn("Retry", "refresh", {}, { primary: true }));
             renderHeader();
             return;
@@ -992,17 +1046,19 @@ function clientMain() {
         autopilotRunning = !!(state.autopilot && state.autopilot.running);
         renderHeader();
         const tabs = { readiness: doctorTab, assessment: assessmentTab, plan: planTab, validation: validationTab };
+        let shared = "";
         let body = "";
         try {
-            body = workflowStatus(state);
-            body += autopilotStrip(state);
-            body += pending ? '<div class="banner"><span class="spin"></span> Agent working on <b>' + esc(pending) + "</b>. Waiting for updated artifacts when the turn finishes.</div>" : "";
-            body += (tabs[activeTab] || assessmentTab)(state);
+            shared = workflowStatus(state);
+            shared += autopilotStrip(state);
+            shared += pending ? '<div class="banner"><span class="spin"></span> Agent working on <b>' + esc(pending) + "</b>. Waiting for updated artifacts when the turn finishes.</div>" : "";
+            body = (tabs[activeTab] || assessmentTab)(state);
         } catch (e) {
             // A tab renderer threw — show the error instead of silently leaving the
             // previous tab's content on screen (which looks like a dead click).
             body = '<div class="banner banner-red">This view hit an error: ' + esc(e && e.message ? e.message : String(e)) + " " + btn("Reload", "refresh", {}, { primary: true }) + "</div>";
         }
+        $("#shared").innerHTML = shared;
         $("#app").innerHTML = body;
     }
 
@@ -1208,12 +1264,13 @@ export function renderHtml({ instanceId, initialTab, token } = {}) {
         '<header class="top"><div class="title-row">' +
         "<h1>Java Modernization Studio</h1><span id=\"status\"></span><span class=\"spacer\"></span>" +
         '<span id="repo" class="repo muted"></span><span id="controls" class="global-controls"></span>' +
-        "</div>" +
+        "</div></header>" +
+        '<div id="shared" class="shared-status"></div>' +
         '<nav class="tabs">' +
         '<button data-tab="assessment">Assess <span class="count"></span></button>' +
         '<button data-tab="plan">Plan <span class="count"></span></button>' +
         '<button data-tab="validation">Validate</button>' +
-        "</nav></header>" +
+        "</nav>" +
         '<main id="app"></main><div id="toast" class="toast"></div>' +
         "<script>window.__APPMOD__=" + boot + ";(" + clientMain.toString() + ")();</script>" +
         "</body></html>"

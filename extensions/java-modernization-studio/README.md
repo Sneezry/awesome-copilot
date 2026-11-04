@@ -6,11 +6,11 @@ The Copilot App Modernization for Java tooling stays the engine. This canvas is 
 
 ## What it does
 
-- **Workflow status** — phase, remaining steps, next action, and a progress bar derived from the repository's progress checklist stay visible across views; reopening the canvas re-reads the saved progress. Expandable summary and execution history remain accessible.
+- **Workflow status** — phase, remaining steps, next action, progress bar, and agent activity appear above the tabs across views; reopening the canvas re-reads the saved progress. Expandable summary and execution history remain accessible.
 - **Readiness** — checks required JDK/build tools and optional tools before execution; access it from the global controls.
 - **Assess** — configures scope and target Java, then shows severity-ordered findings with evidence and linked actions.
 - **Plan** — reviews and approves `plan.md`, follows `progress.md`, and offers predefined tasks or repository Skills only for mapped, approved findings. Older plans without an assessment ID can be reviewed and linked to the current verified assessment without losing completed progress; they still require separate approval.
-- **Validate** — runs build, unit tests, CVE, consistency, and completeness checks.
+- **Validate** — runs build, unit tests, CVE, consistency, and completeness checks. An unchecked completeness step with recorded notes shows **Needs follow-up** and its outstanding work; the gate tracks completion, not whether the check has run.
 - **Autopilot** — optionally runs approved steps in order, with Stop always available while it is running.
 
 Buttons dispatch grounded prompts to your Copilot agent; the canvas reflects the resulting artifacts. Code-changing actions require a current, approved plan and a matching assessed finding.

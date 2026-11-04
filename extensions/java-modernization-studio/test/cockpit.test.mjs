@@ -519,6 +519,31 @@ test("scan: gates scope to an explicit Validation section, not assessment text",
     });
 });
 
+test("scan: an unfinished completeness gate retains its review notes without passing", async () => {
+    const markdown = [
+        "## Validation gates",
+        "- [x] Build both modules",
+        "  - Built locally.",
+        "- [ ] Check completeness <!-- appmod-step:aaaaaaaaaaaaaaaa -->",
+        "  - Reviewed the approved plan, but the gate is open.",
+        "  - **Support:** Confirm the enterprise entitlement.",
+        "    Check the production baseline before release.",
+        "",
+        "## Next",
+        "  - This is not a completeness note.",
+    ].join("\n");
+    await withRepo({ ...PROV, "progress.md": markdown }, async (dir) => {
+        const state = await scanRepo(dir, { includeGit: false });
+        assert.equal(state.gates.completeness, "pending");
+        assert.equal(state.status, "in_progress");
+        assert.deepEqual(state.gateNotes.completeness, [
+            "Reviewed the approved plan, but the gate is open.",
+            "**Support:** Confirm the enterprise entitlement. Check the production baseline before release.",
+        ]);
+        assert.deepEqual(state.progress.steps[1].notes, state.gateNotes.completeness);
+    });
+});
+
 test("scan and renderer: a mixed remediation section stays actionable before validation", async () => {
     const config = { id: "current-request", module: ".", targetJava: 21, cloud: "Azure" };
     const header = "<!-- appmod-cockpit -->\n<!-- appmod-assessment-id:current-request -->\n";
@@ -540,12 +565,12 @@ test("scan and renderer: a mixed remediation section stays actionable before val
         assert.deepEqual(state.gates, { build: "not_run", tests: "not_run", cve: "not_run",
             consistency: "not_run", completeness: "not_run" });
         state.planApprovalStatus = "approved";
-        const html = (await renderClientTab(state, "plan")).app();
-        assert.match(html, /<div class="workflow-stage"><strong>Remediation<\/strong>/);
-        assert.match(html, /Start remediation: Vulnerable dependency/);
-        assert.match(html, /data-kind="work_step"[^>]*Upgrade vulnerable dependencies/);
-        assert.doesNotMatch(html, /run from Validation/);
-        assert.doesNotMatch(html, /Next: Build and run unit tests/);
+        const view = await renderClientTab(state, "plan");
+        assert.match(view.shared(), /<div class="workflow-stage"><strong>Remediation<\/strong>/);
+        assert.match(view.shared(), /Start remediation: Vulnerable dependency/);
+        assert.match(view.app(), /data-kind="work_step"[^>]*Upgrade vulnerable dependencies/);
+        assert.doesNotMatch(view.app(), /run from Validation/);
+        assert.doesNotMatch(view.shared(), /Next: Build and run unit tests/);
     });
 });
 
@@ -1561,6 +1586,13 @@ test("prompts: appmod tools referenced by hash command", () => {
     assert.match(buildPrompt("generate_tests", {}, "/r"), /#appmod-generate-tests-for-java/);
 });
 
+test("prompts: completeness review records follow-up without claiming a passed gate", () => {
+    const prompt = buildPrompt("run_completeness", {}, "/r");
+    assert.match(prompt, /each concrete remaining action as indented bullet notes/);
+    assert.match(prompt, /leave that step unchecked/);
+    assert.match(prompt, /only check it off with evidence/);
+});
+
 test("prompts: unknown kind returns null", () => {
     assert.equal(buildPrompt("bogus", {}, "/r"), null);
 });
@@ -1650,8 +1682,8 @@ test("renderer: shared status, findings, and narrow-screen controls have layout 
     assert.match(html, /\.finding\.sev-P0/);
     assert.match(html, /@media \(max-width: 600px\)/);
     assert.match(html, /\.global-controls \{ flex: 1 1 100%; min-width: 0; flex-wrap: wrap; \}/);
-    assert.match(html, /ul\.steps li \.stext \{ flex: 1; min-width: 0; overflow-wrap: anywhere; \}/);
-    assert.match(html, /ul\.steps li \.srhs \{ flex: 1 1 100%; min-width: 0; margin-left: 25px;/);
+    assert.match(html, /ul\.steps > li \.stext \{ flex: 1; min-width: 0; overflow-wrap: anywhere; \}/);
+    assert.match(html, /ul\.steps > li \.srhs \{ flex: 1 1 100%; min-width: 0; margin-left: 25px;/);
     assert.match(html, /\.banner > span:not\(\.spin\):not\(\.spacer\) \{ flex: 1 1 200px; min-width: 0; \}/);
     assert.match(html, /\.banner \{[^}]*flex-wrap: wrap; overflow-wrap: anywhere;/);
 });
@@ -1746,7 +1778,7 @@ test("renderer: findings offer fixes only for mapped pending steps and never tru
     assert.doesNotMatch(html, /data-kind="run_task"/);
     assert.match(html, /Not in plan/);
     assert.equal((html.match(/data-kind="explain_finding"/g) || []).length, 3);
-    const overview = (await renderClientTab(state, "overview")).app();
+    const overview = (await renderClientTab(state, "overview")).shared();
     assert.doesNotMatch(overview, /Blocker — fix this first/);
 });
 
@@ -1811,8 +1843,8 @@ test("renderer: failed tool checks show the reason and disable execution in ever
     assert.match(client.app(), /data-kind="run_cve"[^>]*disabled/);
 });
 
-// Execute the serialized client against a realistic state and return the #app
-// HTML for a given tab. Runs the script with `new Function` (global scope, NOT
+// Execute the serialized client against a realistic state and return the shared
+// status and #app HTML. Runs the script with `new Function` (global scope, NOT
 // this module's lexical scope) so a stray reference to an undeclared variable
 // surfaces as a real ReferenceError instead of silently resolving to a leaked
 // local — that scope leak is exactly what hid a "dead Plan tab" regression.
@@ -1844,7 +1876,11 @@ async function renderClientTab(state, initialTab) {
     // and re-renders async — let those microtasks settle before reading #app.
     await new Promise((r) => setTimeout(r, 0));
     await new Promise((r) => setTimeout(r, 0));
-    return { app: () => (slots.app ? slots.app._html : ""), controls: () => (slots.controls ? slots.controls._html : "") };
+    return {
+        app: () => (slots.app ? slots.app._html : ""),
+        shared: () => (slots.shared ? slots.shared._html : ""),
+        controls: () => (slots.controls ? slots.controls._html : ""),
+    };
 }
 
 // A realistic snapshot with a multi-phase plan, an assessment report, gates, an
@@ -1908,22 +1944,106 @@ test("renderer: three primary tabs preserve legacy destinations and global statu
     const shell = renderHtml({ instanceId: "exec" });
     const nav = shell.match(/<nav class="tabs">([\s\S]*?)<\/nav>/)?.[1] || "";
     assert.deepEqual([...nav.matchAll(/data-tab="([^"]+)"/g)].map((match) => match[1]), ["assessment", "plan", "validation"]);
+    assert.ok(shell.indexOf('id="shared"') < shell.indexOf('<nav class="tabs">'));
+    assert.ok(shell.indexOf("</nav>") < shell.indexOf('<main id="app">'));
     const state = sampleState();
     const view = await renderClientTab(state, "overview");
-    assert.match(view.app(), /aria-label="Workflow status"/);
+    assert.match(view.shared(), /aria-label="Workflow status"/);
+    assert.doesNotMatch(view.app(), /aria-label="Workflow status"/);
     assert.match(view.controls(), /data-kind="goto:readiness"/);
     assert.match((await renderClientTab(state, "tasks")).app(), /Assessment settings/);
     assert.match((await renderClientTab(state, "summary")).app(), /Validation gates/);
     const running = sampleState({ autopilot: { running: true, scope: "phase", status: "running", current: { title: "Upgrade" }, completed: [] } });
-    assert.match((await renderClientTab(running, "validation")).app(), /data-kind="autopilot_stop"/);
+    assert.match((await renderClientTab(running, "validation")).shared(), /data-kind="autopilot_stop"/);
+});
+
+test("renderer: agent activity stays above the tabs when navigating", async () => {
+    const client = await driveClient(sampleState({ planApprovalStatus: "approved" }), {
+        initialTab: "validation",
+        actionResponse: { ok: true, label: "Completeness check", message: "Queued" },
+    }).ready();
+    await client.clickKind("run_completeness");
+    assert.match(client.shared(), /Agent working on <b>Completeness check<\/b>/);
+    assert.doesNotMatch(client.app(), /Agent working on/);
+    await client.clickKind("goto:assessment");
+    assert.match(client.shared(), /Agent working on <b>Completeness check<\/b>/);
+    assert.match(client.app(), /Assessment settings/);
+    assert.doesNotMatch(client.app(), /Agent working on/);
+    const reviewed = sampleState({
+        planApprovalStatus: "approved",
+        gates: { build: "done", tests: "done", cve: "done", consistency: "done", completeness: "pending" },
+        gateNotes: { completeness: ["**Support:** Confirm enterprise coverage."] },
+    });
+    await client.pushState(reviewed);
+    assert.doesNotMatch(client.shared(), /Agent working on/);
+    assert.match(client.shared(), /Resolve work recorded by the completeness check/);
+    await client.clickKind("goto:validation");
+    assert.match(client.app(), /Support:<\/strong> Confirm enterprise coverage/);
+    assert.match(client.app(), /Needs follow-up/);
+});
+
+test("renderer: incomplete completeness review shows the actual gaps without marking the gate done", async () => {
+    const notes = [
+        "Reviewed all steps, but this gate is still open.",
+        "**Storage cutover:** Copy S3 data before deployment. <script>alert('x')</script>",
+    ];
+    const step = { id: "aaaaaaaaaaaaaaaa", title: "Check completeness", section: "Validation gates",
+        status: "pending", rank: 5, notes };
+    const state = sampleState({
+        percent: 94, planApprovalStatus: "approved",
+        gates: { build: "done", tests: "done", cve: "done", consistency: "done", completeness: "pending" },
+        gateNotes: { completeness: notes },
+        plan: { exists: true, steps: [step] }, progress: { exists: true, steps: [step] },
+    });
+    const view = await renderClientTab(state, "validation");
+    assert.match(view.shared(), /94% complete · 1 remaining/);
+    assert.match(view.shared(), /Resolve work recorded by the completeness check/);
+    assert.match(view.app(), /Completeness needs follow-up/);
+    assert.match(view.app(), /Recorded follow-up \(1\)/);
+    assert.match(view.app(), /Storage cutover:<\/strong> Copy S3 data before deployment/);
+    assert.ok(view.app().indexOf("Storage cutover") < view.app().indexOf("Reviewed all steps"));
+    assert.match(view.app(), /<details class="review-context"><summary>Check context and evidence \(1\)<\/summary>/);
+    assert.match(view.app(), /&lt;script&gt;alert/);
+    assert.doesNotMatch(view.app(), /<script>alert/);
+    assert.match(view.app(), /Recheck Completeness/);
+    assert.match(view.app(), /data-kind="goto:plan"/);
+    const plan = (await renderClientTab(state, "plan")).app();
+    assert.match(plan, /Recorded notes \(2\)/);
+    assert.match(plan, /Storage cutover/);
+
+    const notReviewed = await renderClientTab(sampleState({
+        report: null, gates: state.gates,
+        plan: { exists: true, steps: [{ ...step, notes: undefined }] },
+        progress: { exists: true, steps: [{ ...step, notes: undefined }] },
+    }), "validation");
+    assert.doesNotMatch(notReviewed.app(), /Completeness needs follow-up/);
+    assert.match(notReviewed.app(), /Pending/);
+    assert.match(notReviewed.shared(), /<span>Next<\/span><strong>Check completeness<\/strong>/);
+
+    const unlabeled = await renderClientTab(sampleState({
+        gates: state.gates, gateNotes: { completeness: ["Copy existing objects to Blob before cutover."] },
+    }), "validation");
+    assert.match(unlabeled.app(), /Copy existing objects to Blob before cutover/);
+    assert.doesNotMatch(unlabeled.app(), /class="review-context"/);
+});
+
+test("renderer: shared status clears when the repository becomes unavailable", async () => {
+    const client = await driveClient(sampleState(), { initialTab: "assessment" }).ready();
+    assert.match(client.shared(), /aria-label="Workflow status"/);
+    await client.reconnect();
+    client.setGetState({ ok: false, error: "Repository disconnected" });
+    await client.reconnect();
+    assert.equal(client.shared(), "");
+    assert.match(client.app(), /Repository disconnected/);
 });
 
 test("renderer: overview stays compact while global controls retain branch, refresh, Autopilot and summary", async () => {
     const state = sampleState({ planApprovalStatus: "approved", summary: { exists: true, markdown: "# Outcome\nValidated" },
         autopilot: { running: false, status: "completed", scope: "phase", completed: [{ title: "Fix build", done: true }] } });
     const assess = await renderClientTab(state, "assessment");
-    assert.match(assess.app(), /<details class="summary-details"><summary>Summary<\/summary>/);
-    assert.match(assess.app(), /Execution history \(1\)/);
+    assert.match(assess.shared(), /<details class="summary-details"><summary>Summary<\/summary>/);
+    assert.match(assess.shared(), /Execution history \(1\)/);
+    assert.doesNotMatch(assess.app(), /class="summary-details"|Execution history/);
     assert.doesNotMatch(assess.app(), /Your modernization journey|<h2>Stack<\/h2>|Run on autopilot/);
     assert.match(assess.controls(), /modernize\/java21/);
     assert.match(assess.controls(), /data-kind="refresh"/);
@@ -1937,12 +2057,12 @@ test("renderer: overview stays compact while global controls retain branch, refr
 test("renderer: persistent next action routes to the relevant view and permits handoff", async () => {
     const gates = { build: "done", tests: "done", cve: "done", consistency: "pending", completeness: "pending" };
     const state = sampleState({ planApprovalStatus: "approved", report: null, gates });
-    const html = (await renderClientTab(state, "plan")).app();
-    assert.match(html, /Next: Check consistency/);
+    const html = (await renderClientTab(state, "plan")).shared();
+    assert.match(html, /<span>Next<\/span><strong>Check consistency<\/strong>/);
     assert.match(html, /data-kind="goto:validation"/);
     const shipped = sampleState({ planApprovalStatus: "approved", status: "completed",
         gates: { build: "done", tests: "done", cve: "done", consistency: "done", completeness: "done" } });
-    assert.match((await renderClientTab(shipped, "validation")).app(), /data-kind="open_pr"/);
+    assert.match((await renderClientTab(shipped, "validation")).shared(), /data-kind="open_pr"/);
 });
 
 test("renderer: report availability is distinct from plan progress in workflow status", async () => {
@@ -1952,7 +2072,7 @@ test("renderer: report availability is distinct from plan progress in workflow s
         reportStatus: "ready", assessmentConfig: { id: "request", module: "service", targetJava: 21, cloud: "Azure" },
         reportConfigStatus: "unverified", planConfigStatus: "missing",
     });
-    const stage = async (value) => (await renderClientTab(value, "assessment")).app().match(/<div class="workflow-stage">([\s\S]*?)<\/div>/)?.[1];
+    const stage = async (value) => (await renderClientTab(value, "assessment")).shared().match(/<div class="workflow-stage">([\s\S]*?)<\/div>/)?.[1];
     const unverified = await stage(state);
     assert.match(unverified, /Assessment review/);
     assert.match(unverified, /Report available · settings need review/);
@@ -1973,12 +2093,12 @@ test("renderer: native report without a linked assessment does not recommend a n
         reportStatus: "ready", reportSource: "native", assessmentConfig: null,
         reportConfigStatus: null, planConfigStatus: null,
     });
-    const readiness = (await renderClientTab(state, "readiness")).app();
-    assert.match(readiness, /<strong>Assessment review<\/strong>/);
-    assert.match(readiness, /Report available · settings need review/);
-    assert.match(readiness, /Run an assessment for the selected scope/);
-    assert.match(readiness, /data-kind="goto:assessment"/);
-    assert.doesNotMatch(readiness, /Review findings against the plan/);
+    const readiness = await renderClientTab(state, "readiness");
+    assert.match(readiness.shared(), /<strong>Assessment review<\/strong>/);
+    assert.match(readiness.shared(), /Report available · settings need review/);
+    assert.match(readiness.shared(), /Run an assessment for the selected scope/);
+    assert.match(readiness.shared(), /data-kind="goto:assessment"/);
+    assert.doesNotMatch(readiness.shared(), /Review findings against the plan/);
     const plan = (await renderClientTab(state, "plan")).app();
     assert.match(plan, /Run an assessment for the selected scope before creating a plan/);
     assert.doesNotMatch(plan, /data-kind="generate_plan"/);
@@ -2006,25 +2126,26 @@ test("renderer: Plan tab actually renders its checklist when executed (regressio
     assert.ok(!/hit an error/.test(out));
 });
 
-test("renderer: progress bar remains visible after reopening on Assess or Validate", async () => {
+test("renderer: progress bar appears above all tabs without a duplicate in Plan", async () => {
     const steps = Array.from({ length: 18 }, (_, i) => ({
         title: "Step " + (i + 1), section: "Validation gates", status: i < 15 ? "done" : "pending", rank: 5,
     }));
     const state = sampleState({ percent: 83, plan: { exists: true, steps }, progress: { exists: true, steps } });
-    for (const tab of ["assessment", "validation", "readiness"]) {
-        const out = (await renderClientTab(state, tab)).app();
-        assert.match(out, /83% complete · 3 remaining/);
-        assert.match(out, /class="progress workflow-progress" role="progressbar"[^>]*aria-valuenow="83"/);
-        assert.match(out, /<span style="width:83%"><\/span>/);
+    for (const tab of ["assessment", "plan", "validation", "readiness"]) {
+        const view = await renderClientTab(state, tab);
+        assert.match(view.shared(), /83% complete · 3 remaining/);
+        assert.match(view.shared(), /class="progress workflow-progress" role="progressbar"[^>]*aria-valuenow="83"/);
+        assert.match(view.shared(), /<span style="width:83%"><\/span>/);
+        assert.doesNotMatch(view.app(), /role="progressbar"|class="workflow-overview"/);
     }
     const plan = (await renderClientTab(state, "plan")).app();
     assert.match(plan, /Plan &amp; Progress/);
-    assert.match(plan, /<div class="progress"><span style="width:83%"><\/span><\/div>/);
-    assert.doesNotMatch(plan, /class="progress workflow-progress"/);
+    assert.match(plan, /15 of 18 steps done/);
+    assert.doesNotMatch(plan, /<div class="progress"/);
 
     const empty = (await renderClientTab(sampleState({
         plan: { exists: false, steps: [] }, progress: { exists: false, steps: [] }, percent: 0,
-    }), "assessment")).app();
+    }), "assessment")).shared();
     assert.doesNotMatch(empty, /role="progressbar"/);
 });
 
@@ -2071,7 +2192,7 @@ test("renderer: unassessed task catalog is not an execution view and skills rema
 test("renderer: recommendation batch reports its scope and resumes only pending findings", async () => {
     const state = sampleState({ autopilot: { running: false, status: "stuck", scope: "recommendations",
         stuck: "Fix API", completed: [{ title: "Fix API", done: false }] } });
-    const html = (await renderClientTab(state, "assessment")).app();
+    const html = (await renderClientTab(state, "assessment")).shared();
     assert.match(html, /data-kind="autopilot_start"[^>]*scope&quot;:&quot;recommendations/);
     assert.doesNotMatch(html, /Continue \(next phase\)/);
     assert.match(html, /approved findings/);
@@ -2148,8 +2269,8 @@ test("renderer: recommends the next unfinished validation gate", async () => {
         report: null,
         gates: { build: "done", tests: "done", cve: "done", consistency: "pending", completeness: "pending" },
     });
-    const out = (await renderClientTab(state, "overview")).app();
-    assert.match(out, /Next: Check consistency/);
+    const out = (await renderClientTab(state, "overview")).shared();
+    assert.match(out, /<span>Next<\/span><strong>Check consistency<\/strong>/);
     assert.match(out, /data-kind="goto:validation"/);
     const validation = (await renderClientTab(state, "validation")).app();
     assert.match(validation, /data-kind="run_consistency"/);
@@ -2162,11 +2283,10 @@ test("renderer: a running autopilot shows the live strip and freezes manual acti
         autopilot: { running: true, scope: "phase", status: "running", current: { title: "Fix the build", section: "P0 Build" }, completed: [{ title: "Earlier", section: "P0 Build", done: true }], maxSteps: 25 },
     });
     const r = await renderClientTab(state, "plan");
-    const out = r.app();
-    assert.match(out, /Autopilot running/);
-    assert.match(out, /autopilot_stop/);
-    assert.match(out, /Earlier/); // step log
-    assert.match(out, /data-kind="work_step"[^>]*disabled/); // manual buttons frozen
+    assert.match(r.shared(), /Autopilot running/);
+    assert.match(r.shared(), /autopilot_stop/);
+    assert.match(r.shared(), /Earlier/); // step log
+    assert.match(r.app(), /data-kind="work_step"[^>]*disabled/); // manual buttons frozen
 });
 
 test("renderer: assessment distinguishes invalid output from zero findings", async () => {
@@ -2224,7 +2344,12 @@ function driveClient(initialState, opts = {}) {
     return {
         async ready() { await settle(); return this; },
         app: () => (slots.app ? slots.app._html : ""),
+        shared: () => (slots.shared ? slots.shared._html : ""),
         posts: () => posts,
+        async pushState(nextState) {
+            es.onmessage({ data: JSON.stringify({ type: "state", state: nextState }) });
+            await settle();
+        },
         setValue(id, value) { if (!slots[id]) slots[id] = make(id); slots[id].value = value; },
         setChecked(id, checked) { if (!slots[id]) slots[id] = make(id); slots[id].checked = checked; },
         setStepLink(id, value) { stepLinks.push({ dataset: { stepLink: id, original: "" }, value }); },
@@ -2263,9 +2388,10 @@ test("renderer: assessment settings recall saved scope and require explicit subm
 test("renderer: stale assessment warns and disables actions tied to old artifacts", async () => {
     const config = { id: "new-request", module: ".", targetJava: 17, cloud: "Azure" };
     const stale = sampleState({ assessmentConfig: config, reportConfigStatus: "outdated", planConfigStatus: "outdated" });
-    const overview = (await renderClientTab(stale, "overview")).app();
-    assert.match(overview, /Re-run assessment/);
+    const overview = (await renderClientTab(stale, "overview")).shared();
+    assert.match(overview, /Review assessment settings/);
     const assessment = (await renderClientTab(stale, "assessment")).app();
+    assert.match(assessment, /Re-run assessment/);
     assert.match(assessment, /report.*review|assessment.*outdated/i);
     assert.doesNotMatch(assessment, /data-kind="generate_plan"|data-kind="fix_finding"/);
     assert.match(assessment, /data-kind="explain_finding"/);
@@ -2275,7 +2401,7 @@ test("renderer: stale assessment warns and disables actions tied to old artifact
     assert.doesNotMatch((await renderClientTab(stale, "plan")).controls(), /data-kind="autopilot_start"/);
 
     const reportCurrent = sampleState({ assessmentConfig: config, reportConfigStatus: "current", planConfigStatus: "outdated" });
-    const next = (await renderClientTab(reportCurrent, "overview")).app();
+    const next = (await renderClientTab(reportCurrent, "overview")).shared();
     assert.match(next, /Generate.*plan/);
     assert.match(next, /data-kind="goto:plan"/);
     assert.match((await renderClientTab(reportCurrent, "plan")).app(), /data-kind="generate_plan"/);
@@ -2318,7 +2444,7 @@ test("renderer: recheck_env applies the inline result and never strands the spin
     assert.match(c.app(), /Not ready yet/); // starts blocked
     await c.clickKind("recheck_env", {});
     assert.match(c.app(), /Your environment is ready/); // inline state applied
-    assert.ok(!/Watch the chat/.test(c.app()), "must not show the agent 'pending' spinner banner");
+    assert.doesNotMatch(c.shared(), /Agent working on/, "must not show the agent 'pending' spinner banner");
     assert.equal(c.getStateCalls(), 1, "recheck must not need an extra /state fetch (uses inline state)");
 });
 

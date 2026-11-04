@@ -293,29 +293,47 @@ function statusFromText(text) {
 export function parseChecklist(md) {
     const items = [];
     let section = null;
+    let current = null;
+    let stepIndent = 0;
+    let noteIndent = 0;
     for (const line of md.split(/\r?\n/)) {
         const h = line.match(/^\s*#{1,6}\s+(.*\S)\s*$/);
-        if (h) { section = stripMd(h[1]); continue; }
-        const m = line.match(/^\s*[-*]\s+\[([ xX/~\-])\]\s+(.*\S)\s*$/);
-        if (!m) continue;
-        const mark = m[1].toLowerCase();
+        if (h) { section = stripMd(h[1]); current = null; continue; }
+        const m = line.match(/^([ \t]*)[-*]\s+\[([ xX/~\-])\]\s+(.*\S)\s*$/);
+        if (!m) {
+            const note = line.match(/^([ \t]+)[-*]\s+(.*\S)\s*$/);
+            if (current && note && note[1].length > stepIndent) {
+                (current.notes ||= []).push(note[2].trim());
+                noteIndent = note[1].length;
+            } else if (current && noteIndent && line.trim() &&
+                (line.match(/^[ \t]*/)?.[0].length || 0) > noteIndent) {
+                current.notes[current.notes.length - 1] += " " + line.trim();
+            } else if (line.trim()) {
+                current = null;
+            }
+            continue;
+        }
+        const mark = m[2].toLowerCase();
         let status = "pending";
         if (mark === "x") status = "done";
         else if (mark === "/" || mark === "~" || mark === "-") status = "in_progress";
-        const id = m[2].match(/<!--\s*appmod-step:([a-f0-9]{16,32})\s*-->/i)?.[1] || null;
-        const findingIds = [...m[2].matchAll(/<!--\s*appmod-finding:([^\s<>]+)\s*-->/gi)]
+        const id = m[3].match(/<!--\s*appmod-step:([a-f0-9]{16,32})\s*-->/i)?.[1] || null;
+        const findingIds = [...m[3].matchAll(/<!--\s*appmod-finding:([^\s<>]+)\s*-->/gi)]
             .map((match) => { try { return decodeURIComponent(match[1]); } catch { return null; } }).filter(Boolean);
-        const taskId = m[2].match(/<!--\s*appmod-task:([a-z0-9-]+)\s*-->/i)?.[1] || null;
-        const skillToken = m[2].match(/<!--\s*appmod-skill:([^\s<>]+)\s*-->/i)?.[1];
+        const taskId = m[3].match(/<!--\s*appmod-task:([a-z0-9-]+)\s*-->/i)?.[1] || null;
+        const skillToken = m[3].match(/<!--\s*appmod-skill:([^\s<>]+)\s*-->/i)?.[1];
         let skillFolder = null;
         try { if (skillToken) skillFolder = decodeURIComponent(skillToken); } catch { /* Invalid marker is not a link. */ }
-        const title = m[2].replace(/<!--\s*appmod-step:[a-f0-9]{16,32}\s*-->/gi, "")
+        const title = m[3].replace(/<!--\s*appmod-step:[a-f0-9]{16,32}\s*-->/gi, "")
             .replace(/<!--\s*appmod-(?:finding|task|skill):[^\s<>]+\s*-->/gi, "");
         const inline = statusFromText(title);
         if (inline) status = inline;
-        items.push({ title: stripMd(title), status, section, id,
+        current = { title: stripMd(title), status, section, id,
             ...(findingIds.length ? { findingIds: [...new Set(findingIds)] } : {}),
-            ...(taskId ? { taskId } : {}), ...(skillFolder ? { skillFolder } : {}) });
+            ...(taskId ? { taskId } : {}), ...(skillFolder ? { skillFolder } : {}) };
+        items.push(current);
+        stepIndent = m[1].length;
+        noteIndent = 0;
     }
     return items;
 }
@@ -457,11 +475,13 @@ function deriveGates(steps, summaryText) {
         completeness: /completenes/i,
     };
     const gates = {};
+    const gateNotes = {};
     for (const g of VALIDATION_GATES) {
         let status = "not_run";
         for (const s of steps) {
             if (patterns[g.key].test(s.title)) {
                 status = s.status; // done | in_progress | failed | pending
+                if (s.notes?.length) gateNotes[g.key] = s.notes;
                 break;
             }
         }
@@ -473,7 +493,7 @@ function deriveGates(steps, summaryText) {
         }
         gates[g.key] = status;
     }
-    return gates;
+    return { gates, gateNotes };
 }
 
 async function discoverSkills(repoPath) {
@@ -796,7 +816,8 @@ export async function scanRepo(repoPath, opts = {}) {
     const linkedSteps = planMd && parseChecklist(planMd).length ? planSteps.map((step) => {
         const progress = progressSteps.find((item) => step.id && item.id === step.id) ||
             progressSteps.find((item) => item.title === step.title && (item.section || "") === (step.section || ""));
-        return { ...step, status: progress?.status || step.status };
+        return { ...step, status: progress?.status || step.status,
+            ...(progress?.notes?.length ? { notes: progress.notes } : {}) };
     }) : null;
     if (report?.findings && reportStatus === "ready") {
         const counts = new Map();
@@ -820,7 +841,7 @@ export async function scanRepo(repoPath, opts = {}) {
         sectionSteps(progressMd) ||
         sectionSteps(summaryMd) ||
         (steps.some((step) => step.section) ? [] : steps);
-    const gates = deriveGates(gateSteps, validationSection(summaryMd));
+    const { gates, gateNotes } = deriveGates(gateSteps, validationSection(summaryMd));
 
     let status = "not_started";
     if (summaryMd && VALIDATION_GATES.every(({ key }) => gates[key] === "done") &&
@@ -868,5 +889,6 @@ export async function scanRepo(repoPath, opts = {}) {
         planApprovalStatus,
         ordering,
         gates,
+        gateNotes,
     };
 }
